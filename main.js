@@ -11,8 +11,8 @@ let maxAngle = 60;
 let seedString = "hanna";
 
 // Für die Sky Sphere und den Kamera-Clipping-Wert
-const MIN_FAR = 18000; // Mindestwert, damit die große Sky Sphere nicht abgeschnitten wird.
-const SKYSPHERE_RADIUS = 15000; // Radius der Sky Sphere
+const MIN_FAR = 1500; // Mindestwert, damit die Sky Sphere nicht abgeschnitten wird.
+const SKYSPHERE_RADIUS = 800; // Sky Sphere-Radius
 
 // Global variables for scene, camera, renderer, controls, etc.
 let scene, camera, renderer, controls;
@@ -82,48 +82,21 @@ function adjustCameraToFitSpline() {
   camera.lookAt(center);
 }
 
-// Erzeugt eine Sky Sphere, die von innen gerendert wird.
-// Die Textur wird über ein Canvas erzeugt: schwarzer Hintergrund mit einem sehr feinen, quadratischen Raster.
-// Die Rasterlinien sind nun mit "#010101" (99% Schwarz) gezeichnet, sodass sie kaum sichtbar sind.
-function createSkySphere() {
-  const size = 1024; // Größe der Canvas-Textur
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  
-  // Hintergrund: Schwarz
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, 0, size, size);
-  
-  // Zeichne ein sehr feines, quadratisches Raster – die Linien sind nahezu unsichtbar.
-  ctx.strokeStyle = "#010101"; // 99% Schwarz
-  ctx.lineWidth = 1;
-  const step = 16; // Kleinere Rasterzellen, sodass deutlich mehr Rechtecke zu sehen sind.
-  for (let x = 0; x <= size; x += step) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, size);
-    ctx.stroke();
-  }
-  for (let y = 0; y <= size; y += step) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(size, y);
-    ctx.stroke();
-  }
-  
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.magFilter = THREE.LinearFilter;
-  texture.minFilter = THREE.LinearFilter;
-  
-  // Erstelle die Sky Sphere mit der generierten Textur
+// Erzeugt eine Sky Sphere, die von innen gerendert wird und die Textur aus "img/skybox.png" verwendet.
+function createSkySphereFromImage() {
   const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
+  const texture = new THREE.TextureLoader().load('img/skybox.png', () => {
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  });
+  // Textur als sRGB behandeln, um korrekte Farben zu erhalten
+  texture.encoding = THREE.sRGBEncoding;
+  texture.minFilter = THREE.LinearMipMapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
   material.depthWrite = false;
   const skySphere = new THREE.Mesh(geometry, material);
   skySphere.renderOrder = -100;
-  
   return skySphere;
 }
 
@@ -239,19 +212,19 @@ document.addEventListener('DOMContentLoaded', () => {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   
-  // Füge die Sky Sphere hinzu, damit sie als Hintergrund dient.
-  const skySphere = createSkySphere();
-  scene.add(skySphere);
-  
-  // Kamera erstellen (FOV bleibt moderat; der Far-Wert wird in adjustCameraToFitSpline angepasst)
-  camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
-  
+  // Erstelle den Renderer und konfiguriere die Ausgabe-Encoding
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // Damit Farben korrekt dargestellt werden:
+  renderer.outputEncoding = THREE.sRGBEncoding;
   document.body.appendChild(renderer.domElement);
   
-  // Verhindere das Standard-Kontextmenü bei Rechtsklick
-  renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+  // Füge die Sky Sphere hinzu, die die Textur aus "img/skybox.png" verwendet.
+  const skySphere = createSkySphereFromImage();
+  scene.add(skySphere);
+  
+  // Kamera erstellen – FOV jetzt auf 75 Grad, um ein größeres Sichtfeld zu erhalten.
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
   
   // Erstelle und füge PointerLockControls hinzu, bevor der Spline generiert wird.
   controls = new PointerLockControls(camera, renderer.domElement);
@@ -260,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
   controls.getObject().position.set(0, 200, 600);
   
   // Erstelle die UI und übergebe resetView als Callback.
-  // Bitte ändere in deiner ui.js den Button-Text zu "Reset Focus".
+  // Bitte passe in deiner ui.js den Button-Text zu "Reset Focus" an.
   createUI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
   
   // Generiere die Route und passe die Kameraposition an
