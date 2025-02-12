@@ -56,8 +56,7 @@ function resetView() {
 }
 
 // Passt die Kameraposition, den Far-Clipping-Wert und die Ausrichtung so an, 
-// dass alle Punkte des Splines sichtbar sind. Dabei wird sichergestellt, dass
-// camera.far mindestens MIN_FAR beträgt.
+// dass alle Punkte des Splines sichtbar sind.
 function adjustCameraToFitSpline() {
   // Berechne die Bounding Box des Spline-Groups
   const box = new THREE.Box3().setFromObject(splineGroup);
@@ -85,14 +84,13 @@ function adjustCameraToFitSpline() {
 // Erzeugt eine Sky Sphere, die von innen gerendert wird und die Textur aus "img/skybox.png" verwendet.
 function createSkySphereFromImage() {
   const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
-  const texture = new THREE.TextureLoader().load('img/skybox.png', () => {
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const loader = new THREE.TextureLoader();
+  const texture = loader.load('img/skybox.png', (tex) => {
+    tex.encoding = THREE.sRGBEncoding;
+    tex.minFilter = THREE.LinearMipMapLinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
   });
-  // Textur als sRGB behandeln, um korrekte Farben zu erhalten
-  texture.encoding = THREE.sRGBEncoding;
-  texture.minFilter = THREE.LinearMipMapLinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
   material.depthWrite = false;
   const skySphere = new THREE.Mesh(geometry, material);
@@ -212,10 +210,9 @@ document.addEventListener('DOMContentLoaded', () => {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   
-  // Erstelle den Renderer und konfiguriere die Ausgabe-Encoding
+  // Erstelle den Renderer und konfiguriere das Output-Encoding
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
-  // Damit Farben korrekt dargestellt werden:
   renderer.outputEncoding = THREE.sRGBEncoding;
   document.body.appendChild(renderer.domElement);
   
@@ -223,8 +220,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const skySphere = createSkySphereFromImage();
   scene.add(skySphere);
   
-  // Kamera erstellen – FOV jetzt auf 75 Grad, um ein größeres Sichtfeld zu erhalten.
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
+  // Kamera erstellen – FOV auf 90° gesetzt, um ein größeres Sichtfeld zu erhalten.
+  camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
   
   // Erstelle und füge PointerLockControls hinzu, bevor der Spline generiert wird.
   controls = new PointerLockControls(camera, renderer.domElement);
