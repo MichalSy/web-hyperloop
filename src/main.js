@@ -4,6 +4,8 @@ import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/
 import { setSeed, createSplineGroup, startPointCoord } from './spline.js';
 import { createUI } from './ui.js';
 import { initializeInput, setInputSplineGroup, keys } from './input.js';
+import { Skybox } from './skybox.js';
+import { GameObjectManager } from './GameObjectManager.js';
 
 // Global parameters
 let numPoints = 50;
@@ -20,7 +22,6 @@ let scene, camera, renderer, controls;
 let splineGroup = null;
 
 // --- UI Callback-Funktionen ---
-
 function onUIUpdate(changedParams) {
   if (changedParams.numPoints !== undefined) numPoints = changedParams.numPoints;
   if (changedParams.distanceStep !== undefined) distanceStep = changedParams.distanceStep;
@@ -69,24 +70,6 @@ function adjustCameraToFitSpline() {
   camera.lookAt(center);
 }
 
-// Erzeugt eine Sky Sphere aus "img/skybox.png"
-function createSkySphereFromImage() {
-  const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
-  const texture = new THREE.TextureLoader().load('img/skybox.png', () => {
-    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-  });
-  texture.encoding = THREE.sRGBEncoding;
-  texture.generateMipmaps = false;
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  
-  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
-  material.depthWrite = false;
-  const skySphere = new THREE.Mesh(geometry, material);
-  skySphere.renderOrder = -100;
-  return skySphere;
-}
-
 // --- Main Initialization und Animationsschleife ---
 document.addEventListener('DOMContentLoaded', () => {
   // Szene und Renderer erstellen
@@ -99,8 +82,12 @@ document.addEventListener('DOMContentLoaded', () => {
   document.body.appendChild(renderer.domElement);
   
   // Sky Sphere hinzufügen
-  const skySphere = createSkySphereFromImage();
-  scene.add(skySphere);
+  const skybox = new Skybox(renderer);
+  scene.add(skybox.mesh);
+
+  // GameObjectManager initialisieren und GameObjects hinzufügen 
+  const gameObjectManager = new GameObjectManager();
+  gameObjectManager.add(skybox);
   
   // Kamera erstellen (z.B. FOV 90°)
   camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
@@ -140,6 +127,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (keys['KeyA']) controls.getObject().position.addScaledVector(right, -moveSpeed * delta);
       if (keys['KeyD']) controls.getObject().position.addScaledVector(right, moveSpeed * delta);
     }
+    // Update aller GameObjects über den Manager
+    gameObjectManager.update(delta);
     renderer.render(scene, camera);
   }
   animate();
