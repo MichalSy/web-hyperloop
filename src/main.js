@@ -11,7 +11,7 @@ let maxAngle = 60;
 let seedString = "hanna";
 
 // Für die Sky Sphere und den Kamera-Clipping-Wert
-const MIN_FAR = 1500; // Mindestwert, damit die Sky Sphere nicht abgeschnitten wird.
+const MIN_FAR = 1500;      // Mindestwert, damit die Sky Sphere nicht abgeschnitten wird.
 const SKYSPHERE_RADIUS = 800; // Sky Sphere-Radius
 
 // Global variables for scene, camera, renderer, controls, etc.
@@ -84,13 +84,15 @@ function adjustCameraToFitSpline() {
 // Erzeugt eine Sky Sphere, die von innen gerendert wird und die Textur aus "img/skybox.png" verwendet.
 function createSkySphereFromImage() {
   const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
-  const loader = new THREE.TextureLoader();
-  const texture = loader.load('img/skybox.png', (tex) => {
-    tex.encoding = THREE.sRGBEncoding;
-    tex.minFilter = THREE.LinearMipMapLinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  const texture = new THREE.TextureLoader().load('img/skybox.png', () => {
+    texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
   });
+  // Textur als sRGB behandeln, um korrekte Farben zu erhalten
+  texture.encoding = THREE.sRGBEncoding;
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  
   const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
   material.depthWrite = false;
   const skySphere = new THREE.Mesh(geometry, material);
@@ -109,7 +111,6 @@ function onWheel(e) {
   controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
 }
 
-// Für das Draggen der Route mit der mittleren Maustaste:
 const raycaster = new THREE.Raycaster();
 let dragPlane = new THREE.Plane();
 let dragStartPoint = new THREE.Vector3();
@@ -157,10 +158,10 @@ function onMiddleMouseUp(e) {
   }
 }
 
-// --- Steuerung des Navigationsmodus über rechte Maustaste ---
-// Der Navigationsmodus (PointerLock) wird ausschließlich aktiviert, wenn die rechte Maustaste gedrückt wird.
+// Steuerung des Navigationsmodus über rechte Maustaste: 
+// Der PointerLock-Modus wird aktiviert, wenn die rechte Maustaste gedrückt wird.
 function onRightMouseDown(e) {
-  if (e.button === 2) { // Rechte Maustaste
+  if (e.button === 2) {
     controls.lock();
     e.preventDefault();
   }
@@ -173,7 +174,6 @@ function onRightMouseUp(e) {
   }
 }
 
-// Kombinierte Mouse-Event-Listener
 function onMouseDown(e) {
   if (e.button === 1) {
     onMiddleMouseDown(e);
@@ -197,7 +197,6 @@ function onMouseMove(e) {
   // PointerLockControls übernimmt die Mausbewegungen, wenn gesperrt.
 }
 
-// --- Window Resize Handler ---
 function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
@@ -210,7 +209,7 @@ document.addEventListener('DOMContentLoaded', () => {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   
-  // Erstelle den Renderer und konfiguriere das Output-Encoding
+  // Renderer initialisieren und Output-Encoding setzen
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputEncoding = THREE.sRGBEncoding;
@@ -226,23 +225,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // Erstelle und füge PointerLockControls hinzu, bevor der Spline generiert wird.
   controls = new PointerLockControls(camera, renderer.domElement);
   scene.add(controls.getObject());
-  // Setze eine initiale Position (wird später durch adjustCameraToFitSpline() überschrieben)
   controls.getObject().position.set(0, 200, 600);
   
   // Erstelle die UI und übergebe resetView als Callback.
   // Bitte passe in deiner ui.js den Button-Text zu "Reset Focus" an.
   createUI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
   
-  // Generiere die Route und passe die Kameraposition an
+  // Generiere die Route und passe die Kameraposition an.
   updateSpline();
   
-  // Registriere alle Maus-Event-Listener
+  // Registriere alle Maus-Event-Listener.
   renderer.domElement.addEventListener('mousedown', onMouseDown);
   renderer.domElement.addEventListener('mouseup', onMouseUp);
   renderer.domElement.addEventListener('mousemove', onMouseMove);
   renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
-  
-  // Navigation ausschließlich per rechte Maustaste: Left-Click Toggle entfällt.
   window.addEventListener('resize', onWindowResize, false);
   
   // WASD-Steuerung (nur im PointerLock-Modus)
@@ -259,26 +255,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (controls.isLocked) {
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
-      
-      // Nur die horizontale Komponente für die Bewegung verwenden
       const horizontalForward = forward.clone();
       horizontalForward.y = 0;
       horizontalForward.normalize();
       const up = new THREE.Vector3(0, 1, 0);
       const right = new THREE.Vector3().crossVectors(horizontalForward, up).normalize();
       
-      if (keys['KeyW']) {
-        controls.getObject().position.addScaledVector(forward, moveSpeed * delta);
-      }
-      if (keys['KeyS']) {
-        controls.getObject().position.addScaledVector(forward, -moveSpeed * delta);
-      }
-      if (keys['KeyA']) {
-        controls.getObject().position.addScaledVector(right, -moveSpeed * delta);
-      }
-      if (keys['KeyD']) {
-        controls.getObject().position.addScaledVector(right, moveSpeed * delta);
-      }
+      if (keys['KeyW']) controls.getObject().position.addScaledVector(forward, moveSpeed * delta);
+      if (keys['KeyS']) controls.getObject().position.addScaledVector(forward, -moveSpeed * delta);
+      if (keys['KeyA']) controls.getObject().position.addScaledVector(right, -moveSpeed * delta);
+      if (keys['KeyD']) controls.getObject().position.addScaledVector(right, moveSpeed * delta);
     }
     renderer.render(scene, camera);
   }
