@@ -150,7 +150,7 @@ export class UI extends GameObject {
       this.container.querySelector('#maxAngleValue').textContent = newValue;
     });
 
-    this.container.querySelector('#seedString').addEventListener('change', (e) => {
+    this.container.querySelector('#seedString').addEventListener('input', (e) => {
       const newValue = e.target.value;
       this.params.seedString = newValue;
       this.onSeedChange(newValue);
