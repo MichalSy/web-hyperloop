@@ -122,7 +122,7 @@ export class UI extends GameObject {
       <input id="maxAngle" type="range" min="0" max="80" step="1" value="${params.maxAngle}">
       <span id="maxAngleValue">${params.maxAngle}</span>
       <label class="seed-label">Seed:</label>
-      <input class="seed-input" id="seedString" type="text" value="${params.seedString}">
+<input class="seed-input" id="seedString" type="text" value="${params.seedString}" autocomplete="off">
       <button style="grid-column: 1 / 4;" id="resetView">Reset Focus</button>
     `;
 

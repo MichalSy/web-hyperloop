@@ -53,7 +53,10 @@ export class Player extends GameObject {
     this.wheelHandler = (e) => {
       this.onWheel(e);
     };
-    this.contextMenuHandler = (e) => e.preventDefault();
+    this.contextMenuHandler = (e) => {
+      e.preventDefault();
+      document.querySelectorAll('input').forEach(input => input.blur());
+    };
     this.windowResizeHandler = () => this.onWindowResize();
 
     // Registriere die Event Listener global
@@ -169,6 +172,7 @@ export class Player extends GameObject {
     if (e.button === 2) { // Rechte Maustaste
       this.controls.lock();
       e.preventDefault();
+      document.querySelectorAll('input').forEach(input => input.blur());
     }
   }
 
