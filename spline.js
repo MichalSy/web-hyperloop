@@ -161,7 +161,7 @@ export function createSplineGroup(numPoints, maxAngle, distanceStep) {
   const splineCurve = new THREE.CatmullRomCurve3(vectors, true, 'centripetal');
   const smoothPoints = splineCurve.getPoints(200);
   const smoothGeometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
-  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00 });
+  const lineMaterial = new THREE.LineBasicMaterial({ color: 0x39FF14 });
   const smoothLine = new THREE.Line(smoothGeometry, lineMaterial);
   group.add(smoothLine);
   
