@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
 import { setSeed, createSplineGroup, startPointCoord } from './spline.js';
 import { UI } from './ui.js';
-import { initializeInput, setInputSplineGroup, keys } from './input.js';
+import { Player } from './Player.js';
 import { Skybox } from './skybox.js';
 import { GameObjectManager } from './GameObjectManager.js';
 
@@ -18,7 +18,7 @@ const MIN_FAR = 1500;
 const SKYSPHERE_RADIUS = 800;
 
 // Global variables
-let scene, camera, renderer, controls;
+let scene, camera, renderer, controls, player;
 let splineGroup = null;
 
 // --- UI Callback-Funktionen ---
@@ -40,7 +40,7 @@ function updateSpline() {
   if (splineGroup) scene.remove(splineGroup);
   splineGroup = createSplineGroup(numPoints, maxAngle, distanceStep);
   // Setze die aktuelle Spline Group für die Input-Logik:
-  setInputSplineGroup(splineGroup);
+  player.setInputSplineGroup(splineGroup);
   scene.add(splineGroup);
   adjustCameraToFitSpline();
 }
@@ -97,15 +97,16 @@ document.addEventListener('DOMContentLoaded', () => {
   scene.add(controls.getObject());
   controls.getObject().position.set(0, 200, 600);
   
+  // Player erstellen und zum GameObjectManager hinzufügen
+  player = new Player(camera, controls, renderer.domElement);
+  gameObjectManager.add(player); 
+
   // UI erstellen und zum GameObjectManager hinzufügen
   const ui = new UI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
   gameObjectManager.add(ui);
   
   // Spline generieren und Kamera anpassen
   updateSpline();
-  
-  // Input-Handler initialisieren (alle Maus- und Keyboard-Events)
-  initializeInput(renderer.domElement, camera, controls);
   
   // Animationsschleife und WASD-Steuerung
   const clock = new THREE.Clock();
@@ -114,20 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const delta = clock.getDelta();
     const moveSpeed = 100;
     
-    if (controls.isLocked) {
-      const forward = new THREE.Vector3();
-      camera.getWorldDirection(forward);
-      const horizontalForward = forward.clone();
-      horizontalForward.y = 0;
-      horizontalForward.normalize();
-      const up = new THREE.Vector3(0, 1, 0);
-      const right = new THREE.Vector3().crossVectors(horizontalForward, up).normalize();
-      
-      if (keys['KeyW']) controls.getObject().position.addScaledVector(forward, moveSpeed * delta);
-      if (keys['KeyS']) controls.getObject().position.addScaledVector(forward, -moveSpeed * delta);
-      if (keys['KeyA']) controls.getObject().position.addScaledVector(right, -moveSpeed * delta);
-      if (keys['KeyD']) controls.getObject().position.addScaledVector(right, moveSpeed * delta);
-    }
+    // (Bewegung des Spielers erfolgt nun in der Player-Klasse.)
     // Update aller GameObjects über den Manager
     gameObjectManager.update(delta);
     renderer.render(scene, camera);
