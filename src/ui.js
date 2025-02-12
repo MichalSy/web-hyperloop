@@ -18,7 +18,7 @@ export function createUI(params, onUpdate, onFocus, onSeedChange) {
       <input id="angleSlider" type="range" min="5" max="90" step="1" value="${params.maxAngle}"><br><br>
       <label for="seedInput">Seed:</label>
       <input id="seedInput" type="text" value="${params.seedString}"><br><br>
-      <button id="focusButton">Focus Start</button>
+      <button id="focusButton">Reset focus</button>
     `;
     uiDiv.addEventListener('click', e => e.stopPropagation());
     document.body.appendChild(uiDiv);
