@@ -3,11 +3,12 @@ import * as THREE from 'three';
 import { GameObject } from './GameObject.js';
 
 export class Player extends GameObject {
-  constructor(camera, controls, moveSpeed = 100) {
+  constructor(camera, controls, domElement, moveSpeed = 100) {
     super();
     this.camera = camera;
     this.controls = controls;
     this.moveSpeed = moveSpeed;
+    this.domElement = domElement;
 
     // Interne Zustandsvariablen für Eingaben
     this.keys = {};
@@ -29,8 +30,10 @@ export class Player extends GameObject {
         this.mouseButtons.left = true;
       } else if (e.button === 1) {
         this.mouseButtons.middle = true;
+        this.onMiddleMouseDown(e);
       } else if (e.button === 2) {
         this.mouseButtons.right = true;
+        this.onRightMouseDown(e);
       }
     };
     this.mouseUpHandler = (e) => {
@@ -38,27 +41,30 @@ export class Player extends GameObject {
         this.mouseButtons.left = false;
       } else if (e.button === 1) {
         this.mouseButtons.middle = false;
+        this.onMiddleMouseUp(e);
       } else if (e.button === 2) {
         this.mouseButtons.right = false;
+        this.onRightMouseUp(e);
       }
     };
+    this.mouseMoveHandler = (e) => {
+      this.onMouseMove(e);
+    };
     this.wheelHandler = (e) => {
-      // Beispielhafte Implementierung der Scroll-Logik
-      console.log('Scroll-Delta:', e.deltaY);
-      const moveFactor = 0.3;
-      const forward = new THREE.Vector3();
-      this.camera.getWorldDirection(forward);
-      this.controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
+      this.onWheel(e);
     };
     this.contextMenuHandler = (e) => e.preventDefault();
+    this.windowResizeHandler = () => this.onWindowResize();
 
     // Registriere die Event Listener global
+    this.domElement.addEventListener('mousedown', this.mouseDownHandler);
+    this.domElement.addEventListener('mouseup', this.mouseUpHandler);
+    this.domElement.addEventListener('mousemove', this.mouseMoveHandler);
+    this.domElement.addEventListener('wheel', this.wheelHandler, { passive: false });
     window.addEventListener('keydown', this.keyDownHandler);
     window.addEventListener('keyup', this.keyUpHandler);
-    window.addEventListener('mousedown', this.mouseDownHandler);
-    window.addEventListener('mouseup', this.mouseUpHandler);
-    window.addEventListener('wheel', this.wheelHandler);
     window.addEventListener('contextmenu', this.contextMenuHandler);
+    window.addEventListener('resize', this.windowResizeHandler, false);
 
     // Zusätzliche Variablen für das Draggen der Spline-Route
     this.raycaster = new THREE.Raycaster();
@@ -110,6 +116,13 @@ export class Player extends GameObject {
   }
 
   // --- Mouse Event Handler ---
+  onWheel(e) {
+    e.preventDefault();
+    const moveFactor = 0.3;
+    const forward = new THREE.Vector3();
+    this.camera.getWorldDirection(forward);
+    this.controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
+  }
 
   onMiddleMouseDown(e) {
     if (e.button === 1 && this.splineGroup) { // Mittlere Maustaste
@@ -189,7 +202,6 @@ export class Player extends GameObject {
   }
 
   // --- Window Resize Handler ---
-
   onWindowResize() {
     if (this.camera && this.domElement) {
       this.camera.aspect = window.innerWidth / window.innerHeight;
@@ -200,23 +212,17 @@ export class Player extends GameObject {
 
   // Optionale Methode zum Entfernen der Event Listener, falls der Player zerstört wird
   dispose() {
+    this.domElement.removeEventListener('mousedown', this.mouseDownHandler);
+    this.domElement.removeEventListener('mouseup', this.mouseUpHandler);
+    this.domElement.removeEventListener('mousemove', this.mouseMoveHandler);
+    this.domElement.removeEventListener('wheel', this.wheelHandler);
     window.removeEventListener('keydown', this.keyDownHandler);
     window.removeEventListener('keyup', this.keyUpHandler);
-    window.removeEventListener('mousedown', this.mouseDownHandler);
-    window.removeEventListener('mouseup', this.mouseUpHandler);
-    window.removeEventListener('wheel', this.wheelHandler);
     window.removeEventListener('contextmenu', this.contextMenuHandler);
+    window.removeEventListener('resize', this.windowResizeHandler);
   }
 
   setInputSplineGroup(group) {
     this.splineGroup = group;
   }
-}
-
-// Exportierte Funktionen für die Initialisierung, sodass main.js weiterhin funktioniert
-export function initializeInput(domElement, camera, controls) {
-  // Beispiel: Beim Klick auf das DOM-Element wird der Pointer gelockt.
-  domElement.addEventListener('click', () => {
-    controls.lock();
-  });
 }

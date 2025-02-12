@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
 import { setSeed, createSplineGroup, startPointCoord } from './spline.js';
 import { UI } from './ui.js';
-import { initializeInput, Player } from './Player.js';
+import { Player } from './Player.js';
 import { Skybox } from './skybox.js';
 import { GameObjectManager } from './GameObjectManager.js';
 
@@ -97,8 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
   scene.add(controls.getObject());
   controls.getObject().position.set(0, 200, 600);
   
-  player = new Player(camera, controls);
-  gameObjectManager.add(player);
+  // Player erstellen und zum GameObjectManager hinzufügen
+  player = new Player(camera, controls, renderer.domElement);
+  gameObjectManager.add(player); 
 
   // UI erstellen und zum GameObjectManager hinzufügen
   const ui = new UI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
@@ -106,9 +107,6 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Spline generieren und Kamera anpassen
   updateSpline();
-  
-  // Input-Handler initialisieren (alle Maus- und Keyboard-Events)
-  initializeInput(renderer.domElement, camera, controls);
   
   // Animationsschleife und WASD-Steuerung
   const clock = new THREE.Clock();
