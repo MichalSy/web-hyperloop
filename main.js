@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
 import { setSeed, createSplineGroup, startPointCoord } from './spline.js';
-import { createUI } from './ui.js';
+import { UI } from './ui.js';
 import { initializeInput, setInputSplineGroup, keys } from './input.js';
 import { Skybox } from './skybox.js';
 import { GameObjectManager } from './GameObjectManager.js';
@@ -97,8 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
   scene.add(controls.getObject());
   controls.getObject().position.set(0, 200, 600);
   
-  // UI erstellen (Button-Text: "Reset Focus")
-  createUI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
+  // UI erstellen und zum GameObjectManager hinzufügen
+  const ui = new UI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
+  gameObjectManager.add(ui);
   
   // Spline generieren und Kamera anpassen
   updateSpline();
