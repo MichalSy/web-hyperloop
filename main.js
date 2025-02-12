@@ -10,6 +10,10 @@ let distanceStep = 10;
 let maxAngle = 60;
 let seedString = "hanna";
 
+// Für die Sky Sphere und den Kamera-Clipping-Wert
+const MIN_FAR = 18000; // Mindestwert, damit die große Sky Sphere nicht abgeschnitten wird.
+const SKYSPHERE_RADIUS = 15000; // Radius der Sky Sphere
+
 // Global variables for scene, camera, renderer, controls, etc.
 let scene, camera, renderer, controls;
 let splineGroup = null;
@@ -34,7 +38,7 @@ function onSeedChange(newSeed) {
   updateSpline();
 }
 
-// Aktualisiert den Spline anhand der globalen Parameter
+// Aktualisiert den Spline anhand der globalen Parameter und passt danach die Kamera an
 function updateSpline() {
   setSeed(seedString);
   if (splineGroup) {
@@ -42,13 +46,85 @@ function updateSpline() {
   }
   splineGroup = createSplineGroup(numPoints, maxAngle, distanceStep);
   scene.add(splineGroup);
+  adjustCameraToFitSpline();
 }
 
-// Fokussiert die Kamera auf den Startpunkt der Route
-function focusOnStart() {
-  const offset = new THREE.Vector3(0, 100, 100);
-  camera.position.copy(startPointCoord.clone().add(offset));
-  camera.lookAt(startPointCoord);
+// Reset-Funktion: Setzt die Kamera zurück, sodass alle Punkte (und die Sky Sphere) sichtbar sind.
+// Dieser Callback wird an den UI-Button "Reset Focus" übergeben.
+function resetView() {
+  adjustCameraToFitSpline();
+}
+
+// Passt die Kameraposition, den Far-Clipping-Wert und die Ausrichtung so an, 
+// dass alle Punkte des Splines sichtbar sind. Dabei wird sichergestellt, dass
+// camera.far mindestens MIN_FAR beträgt.
+function adjustCameraToFitSpline() {
+  // Berechne die Bounding Box des Spline-Groups
+  const box = new THREE.Box3().setFromObject(splineGroup);
+  // Bestimme daraus eine Bounding Sphere
+  const sphere = new THREE.Sphere();
+  box.getBoundingSphere(sphere);
+  const center = sphere.center;
+  const splineRadius = sphere.radius;
+  
+  // Berechne den nötigen Abstand anhand des Kamerafov (FOV in Radiant)
+  const fov = THREE.MathUtils.degToRad(camera.fov);
+  const margin = 1.2; // Sicherheitsfaktor
+  const distance = (splineRadius * margin) / Math.sin(fov / 2);
+  
+  // Setze den Far-Clipping-Wert so, dass er mindestens MIN_FAR beträgt
+  camera.far = Math.max(distance + splineRadius * margin, MIN_FAR);
+  camera.updateProjectionMatrix();
+  
+  // Positioniere die Kamera relativ zum Center entlang der Z-Achse.
+  const offset = new THREE.Vector3(0, 0, distance);
+  controls.getObject().position.copy(center.clone().add(offset));
+  camera.lookAt(center);
+}
+
+// Erzeugt eine Sky Sphere, die von innen gerendert wird.
+// Die Textur wird über ein Canvas erzeugt: schwarzer Hintergrund mit einem sehr feinen, quadratischen Raster.
+// Die Rasterlinien sind nun mit "#010101" (99% Schwarz) gezeichnet, sodass sie kaum sichtbar sind.
+function createSkySphere() {
+  const size = 1024; // Größe der Canvas-Textur
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+  
+  // Hintergrund: Schwarz
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, size, size);
+  
+  // Zeichne ein sehr feines, quadratisches Raster – die Linien sind nahezu unsichtbar.
+  ctx.strokeStyle = "#010101"; // 99% Schwarz
+  ctx.lineWidth = 1;
+  const step = 16; // Kleinere Rasterzellen, sodass deutlich mehr Rechtecke zu sehen sind.
+  for (let x = 0; x <= size; x += step) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, size);
+    ctx.stroke();
+  }
+  for (let y = 0; y <= size; y += step) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(size, y);
+    ctx.stroke();
+  }
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  
+  // Erstelle die Sky Sphere mit der generierten Textur
+  const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
+  const material = new THREE.MeshBasicMaterial({ map: texture, side: THREE.BackSide });
+  material.depthWrite = false;
+  const skySphere = new THREE.Mesh(geometry, material);
+  skySphere.renderOrder = -100;
+  
+  return skySphere;
 }
 
 // --- Zusätzliche Mausbewegungen ---
@@ -56,15 +132,13 @@ function focusOnStart() {
 // Mausrad: Bewegt den Spieler vorwärts/rückwärts (unabhängig vom PointerLock)
 function onWheel(e) {
   e.preventDefault();
-  const moveFactor = 0.3; // Schneller
+  const moveFactor = 0.3;
   const forward = new THREE.Vector3();
   camera.getWorldDirection(forward);
   controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
 }
 
 // Für das Draggen der Route mit der mittleren Maustaste:
-// Wir berechnen den Schnittpunkt des Mausstrahls mit einer Ebene, die durch die aktuelle
-// Position der Route (splineGroup) verläuft und senkrecht zur Kamerarichtung steht.
 const raycaster = new THREE.Raycaster();
 let dragPlane = new THREE.Plane();
 let dragStartPoint = new THREE.Vector3();
@@ -81,7 +155,6 @@ function onMiddleMouseDown(e) {
     raycaster.setFromCamera(mouse, camera);
     const camDir = new THREE.Vector3();
     camera.getWorldDirection(camDir);
-    // Erzeuge eine Ebene durch die momentane Position der Route, senkrecht zur Kamerarichtung.
     dragPlane.setFromNormalAndCoplanarPoint(camDir, splineGroup.position);
     raycaster.ray.intersectPlane(dragPlane, dragStartPoint);
     routeInitialPosition.copy(splineGroup.position);
@@ -113,34 +186,18 @@ function onMiddleMouseUp(e) {
   }
 }
 
-// Rechte Maustaste: Rotation wie im PointerLock-Modus
-let isRightMouseDown = false;
-
+// --- Steuerung des Navigationsmodus über rechte Maustaste ---
+// Der Navigationsmodus (PointerLock) wird ausschließlich aktiviert, wenn die rechte Maustaste gedrückt wird.
 function onRightMouseDown(e) {
-  if (e.button === 2) { // rechte Maustaste
-    isRightMouseDown = true;
-    e.preventDefault();
-  }
-}
-
-function onRightMouseMove(e) {
-  if (isRightMouseDown) {
-    const sensitivity = 0.002; // Gleiche Empfindlichkeit wie im PointerLock-Modus
-    const movementX = e.movementX || 0;
-    const movementY = e.movementY || 0;
-    // Update Yaw (horizontal) über das Yaw-Objekt:
-    controls.getObject().rotation.y -= movementX * sensitivity;
-    // Update Pitch (vertikal) über das Pitch-Objekt und clampen:
-    const pitchObject = controls.getPitchObject();
-    pitchObject.rotation.x -= movementY * sensitivity;
-    pitchObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pitchObject.rotation.x));
+  if (e.button === 2) { // Rechte Maustaste
+    controls.lock();
     e.preventDefault();
   }
 }
 
 function onRightMouseUp(e) {
   if (e.button === 2) {
-    isRightMouseDown = false;
+    controls.unlock();
     e.preventDefault();
   }
 }
@@ -163,13 +220,10 @@ function onMouseUp(e) {
 }
 
 function onMouseMove(e) {
-  // Beachte: Wir rufen beide Funktionen auf, falls beide Modi aktiv sein sollten.
   if (isDraggingRoute) {
     onMiddleMouseMove(e);
   }
-  if (isRightMouseDown) {
-    onRightMouseMove(e);
-  }
+  // PointerLockControls übernimmt die Mausbewegungen, wenn gesperrt.
 }
 
 // --- Window Resize Handler ---
@@ -181,25 +235,36 @@ function onWindowResize() {
 
 // --- Main Initialization und Animationsschleife ---
 document.addEventListener('DOMContentLoaded', () => {
-  // Szene, Kamera, Renderer erstellen
+  // Szene erstellen
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   
-  camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, 1000);
+  // Füge die Sky Sphere hinzu, damit sie als Hintergrund dient.
+  const skySphere = createSkySphere();
+  scene.add(skySphere);
+  
+  // Kamera erstellen (FOV bleibt moderat; der Far-Wert wird in adjustCameraToFitSpline angepasst)
+  camera = new THREE.PerspectiveCamera(25, window.innerWidth / window.innerHeight, 0.1, MIN_FAR);
+  
   renderer = new THREE.WebGLRenderer();
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.body.appendChild(renderer.domElement);
   
-  // EventListener, die auf renderer.domElement zugreifen, werden hier gesetzt.
+  // Verhindere das Standard-Kontextmenü bei Rechtsklick
   renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
   
-  updateSpline();
-  
-  createUI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, focusOnStart, onSeedChange);
-  
+  // Erstelle und füge PointerLockControls hinzu, bevor der Spline generiert wird.
   controls = new PointerLockControls(camera, renderer.domElement);
   scene.add(controls.getObject());
+  // Setze eine initiale Position (wird später durch adjustCameraToFitSpline() überschrieben)
   controls.getObject().position.set(0, 200, 600);
+  
+  // Erstelle die UI und übergebe resetView als Callback.
+  // Bitte ändere in deiner ui.js den Button-Text zu "Reset Focus".
+  createUI({ numPoints, distanceStep, maxAngle, seedString }, onUIUpdate, resetView, onSeedChange);
+  
+  // Generiere die Route und passe die Kameraposition an
+  updateSpline();
   
   // Registriere alle Maus-Event-Listener
   renderer.domElement.addEventListener('mousedown', onMouseDown);
@@ -207,15 +272,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderer.domElement.addEventListener('mousemove', onMouseMove);
   renderer.domElement.addEventListener('wheel', onWheel, { passive: false });
   
-  // Pointer-Lock-Toggle: Klicks außerhalb der UI schalten den Modus um.
-  document.addEventListener('click', () => {
-    if (controls.isLocked) {
-      controls.unlock();
-    } else {
-      controls.lock();
-    }
-  });
-  
+  // Navigation ausschließlich per rechte Maustaste: Left-Click Toggle entfällt.
   window.addEventListener('resize', onWindowResize, false);
   
   // WASD-Steuerung (nur im PointerLock-Modus)
@@ -233,6 +290,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const forward = new THREE.Vector3();
       camera.getWorldDirection(forward);
       
+      // Nur die horizontale Komponente für die Bewegung verwenden
       const horizontalForward = forward.clone();
       horizontalForward.y = 0;
       horizontalForward.normalize();
