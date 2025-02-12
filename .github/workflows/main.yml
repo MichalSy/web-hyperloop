@@ -13,7 +13,7 @@ jobs:
     # uses GitHub's checkout action to checkout code form the master branch
     - uses: actions/checkout@v2
              
-    - name: Commit wwwroot to GitHub Pages
+    - name: Commit to GitHub Pages
       uses: JamesIves/github-pages-deploy-action@4.1.7
       with:
         branch: gh-pages
