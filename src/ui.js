@@ -1,62 +1,75 @@
 // ui.js
-export function createUI(params, onUpdate, onFocus, onSeedChange) {
-    // params: { numPoints, distanceStep, maxAngle, seedString }
-    const uiDiv = document.createElement('div');
-    uiDiv.id = 'ui';
-    uiDiv.style.position = 'absolute';
-    uiDiv.style.top = '10px';
-    uiDiv.style.left = '10px';
-    uiDiv.style.background = 'rgba(255,255,255,0.8)';
-    uiDiv.style.padding = '10px';
-    uiDiv.style.fontFamily = 'Arial, sans-serif';
-    uiDiv.innerHTML = `
-      <label for="pointsSlider">Punktanzahl: <span id="pointsValue">${params.numPoints}</span></label><br>
-      <input id="pointsSlider" type="range" min="10" max="200" step="1" value="${params.numPoints}"><br><br>
-      <label for="distanceSlider">Punktabstand: <span id="distanceValue">${params.distanceStep}</span></label><br>
-      <input id="distanceSlider" type="range" min="1" max="20" step="0.1" value="${params.distanceStep}"><br><br>
-      <label for="angleSlider">Max Winkel (Grad): <span id="angleValue">${params.maxAngle}</span></label><br>
-      <input id="angleSlider" type="range" min="5" max="90" step="1" value="${params.maxAngle}"><br><br>
-      <label for="seedInput">Seed:</label>
-      <input id="seedInput" type="text" value="${params.seedString}"><br><br>
-      <button id="focusButton">Reset focus</button>
+import { GameObject } from './GameObject.js';
+
+export class UI extends GameObject {
+  constructor(params, onUIUpdate, resetView, onSeedChange) {
+    super();
+    this.params = params;
+    this.onUIUpdate = onUIUpdate;
+    this.resetView = resetView;
+    this.onSeedChange = onSeedChange;
+
+    // Create a container for the UI
+    this.container = document.createElement('div');
+    this.container.id = 'ui-container';
+    this.container.style.position = 'absolute';
+    this.container.style.top = '10px';
+    this.container.style.left = '10px';
+    this.container.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+    this.container.style.padding = '10px';
+    this.container.style.color = 'white';
+    this.container.style.fontFamily = 'sans-serif';
+    
+    // Set the inner HTML for UI controls
+    this.container.innerHTML = `
+      <div>
+        <label>Number of Points: <input id="numPoints" type="number" value="${params.numPoints}"></label>
+      </div>
+      <div>
+        <label>Distance Step: <input id="distanceStep" type="number" value="${params.distanceStep}"></label>
+      </div>
+      <div>
+        <label>Max Angle: <input id="maxAngle" type="number" value="${params.maxAngle}"></label>
+      </div>
+      <div>
+        <label>Seed: <input id="seedString" type="text" value="${params.seedString}"></label>
+      </div>
+      <button id="resetView">Reset Focus</button>
     `;
-    uiDiv.addEventListener('click', e => e.stopPropagation());
-    document.body.appendChild(uiDiv);
     
-    const pointsSlider = document.getElementById('pointsSlider');
-    const distanceSlider = document.getElementById('distanceSlider');
-    const angleSlider = document.getElementById('angleSlider');
-    const seedInput = document.getElementById('seedInput');
-    const pointsValueSpan = document.getElementById('pointsValue');
-    const distanceValueSpan = document.getElementById('distanceValue');
-    const angleValueSpan = document.getElementById('angleValue');
-    const focusButton = document.getElementById('focusButton');
+    document.body.appendChild(this.container);
     
-    pointsSlider.addEventListener('input', () => {
-      const newNumPoints = parseInt(pointsSlider.value);
-      pointsValueSpan.textContent = newNumPoints;
-      onUpdate({ numPoints: newNumPoints });
+    // Setup event listeners for UI controls
+    this.container.querySelector('#numPoints').addEventListener('change', (e) => {
+      const newValue = Number(e.target.value);
+      this.params.numPoints = newValue;
+      this.onUIUpdate({ numPoints: newValue });
     });
     
-    distanceSlider.addEventListener('input', () => {
-      const newDistance = parseFloat(distanceSlider.value);
-      distanceValueSpan.textContent = newDistance;
-      onUpdate({ distanceStep: newDistance });
+    this.container.querySelector('#distanceStep').addEventListener('change', (e) => {
+      const newValue = Number(e.target.value);
+      this.params.distanceStep = newValue;
+      this.onUIUpdate({ distanceStep: newValue });
     });
     
-    angleSlider.addEventListener('input', () => {
-      const newAngle = parseFloat(angleSlider.value);
-      angleValueSpan.textContent = newAngle;
-      onUpdate({ maxAngle: newAngle });
+    this.container.querySelector('#maxAngle').addEventListener('change', (e) => {
+      const newValue = Number(e.target.value);
+      this.params.maxAngle = newValue;
+      this.onUIUpdate({ maxAngle: newValue });
     });
     
-    seedInput.addEventListener('input', () => {
-      onSeedChange(seedInput.value);
+    this.container.querySelector('#seedString').addEventListener('change', (e) => {
+      const newValue = e.target.value;
+      this.params.seedString = newValue;
+      this.onSeedChange(newValue);
     });
     
-    focusButton.addEventListener('click', e => {
-      e.stopPropagation();
-      onFocus();
+    this.container.querySelector('#resetView').addEventListener('click', () => {
+      this.resetView();
     });
   }
-  
+
+  update(deltaTime) {
+    // Optional: Update dynamic UI elements or animations if needed.
+  }
+}
