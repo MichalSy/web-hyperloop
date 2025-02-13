@@ -30,7 +30,13 @@ document.addEventListener('DOMContentLoaded', () => {
   scene.add(dirLight);
   
   // init generated spline
-  splineGraph.updateSpline(ui.numPoints, ui.maxAngle, ui.distanceStep, ui.seedString);
+  
+  // Beispielaufruf:
+  // 20 Kontrollpunkte, 300 Segmente, Breite=12, Dicke=0.2, Seed="Rainbow"
+  splineGraph.updateSpline(30, 300, 12, 0.2, "hanna");
+
+
+
   
   // main loop
   const clock = new THREE.Clock();
