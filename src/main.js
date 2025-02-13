@@ -20,6 +20,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const ui = new UI();
   ui.initiate();
+
+  // Setup lighting
+  const scene = gameEngine.getScene();
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+  const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  dirLight.position.set(0, 10, 0);
+  scene.add(dirLight);
   
   // init generated spline
   splineGraph.updateSpline(ui.numPoints, ui.maxAngle, ui.distanceStep, ui.seedString);

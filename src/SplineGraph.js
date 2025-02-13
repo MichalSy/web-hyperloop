@@ -14,7 +14,7 @@ export class SplineGraph extends GameObject {
         this.seededRandom = null;
     }
 
-    // --- Static Seed Functions ---
+    // Static seed functions remain unchanged...
     static cyrb128(str) {
         let h1 = 1779033703, h2 = 3144134277, h3 = 1013904242, h4 = 2773480762;
         for (let i = 0, k; i < str.length; i++) {
@@ -45,189 +45,209 @@ export class SplineGraph extends GameObject {
         return this.seededRandom() * (max - min) + min;
     }
 
-    // Returns a random unit vector within a cone around the given forward vector.
-    randomDirectionWithinCone(forward, maxAngleDegrees) {
-        const maxAngleRad = THREE.MathUtils.degToRad(maxAngleDegrees);
-        const cosTheta = THREE.MathUtils.lerp(Math.cos(maxAngleRad), 1, this.seededRandom());
-        const sinTheta = Math.sqrt(1 - cosTheta * cosTheta);
-        const phi = this.seededRandom() * 2 * Math.PI;
-        const x = sinTheta * Math.cos(phi);
-        const y = sinTheta * Math.sin(phi);
-        const z = cosTheta;
-        let dir = new THREE.Vector3(x, y, z);
-        const defaultAxis = new THREE.Vector3(0, 0, 1);
-        const quaternion = new THREE.Quaternion().setFromUnitVectors(defaultAxis, forward.clone().normalize());
-        dir.applyQuaternion(quaternion);
-        return dir.normalize();
-    }
-
-    // Generates a closing path from the last open spline point back to the start point.
-    createClosingPath(lastPoint, startPoint, penultimatePoint, openDirection, stepDistance, maxAngleDeviation) {
-        const path = [];
-        let current = new THREE.Vector3(lastPoint.x, lastPoint.y, lastPoint.z);
-        const target = new THREE.Vector3(startPoint.x, startPoint.y, startPoint.z);
-        const penultimate = new THREE.Vector3(penultimatePoint.x, penultimatePoint.y, penultimatePoint.z);
-        
-        let currentForward = new THREE.Vector3().subVectors(current, penultimate).normalize();
-        const initialDistance = current.distanceTo(target);
-        const maxSteps = 1000;
-        let steps = 0;
-        
-        while (current.distanceTo(target) > stepDistance && steps < maxSteps) {
-            const d = current.distanceTo(target);
-            const biasFactor = 0.1 + 0.5 * (1 - Math.min(d / initialDistance, 1));
-            const toTarget = new THREE.Vector3().subVectors(target, current).normalize();
-            currentForward.lerp(toTarget, biasFactor).normalize();
-            
-            const randomDir = this.randomDirectionWithinCone(currentForward, maxAngleDeviation);
-            const candidate = current.clone().add(randomDir.multiplyScalar(stepDistance));
-            
-            if (candidate.distanceTo(target) < stepDistance) {
-                const idealBackwards = openDirection.clone().negate();
-                const finalDirection = this.randomDirectionWithinCone(idealBackwards, maxAngleDeviation);
-                const finalCandidate = target.clone().add(finalDirection.multiplyScalar(stepDistance));
-                path.push({ x: finalCandidate.x, y: finalCandidate.y, z: finalCandidate.z });
-                break;
-            }
-            
-            current.copy(candidate);
-            path.push({ x: current.x, y: current.y, z: current.z });
-            steps++;
-        }
-        return path;
-    }
-
-    // Generates an open spline with random deviations and appends a closing path.
     createSplinePoints(numPoints, maxAngle, distanceStep) {
         const points = [];
-        points.push({ x: 0, y: 0, z: 0 });
-        let currentAngleXY = 0;
-        let currentAngleZ = 0;
-        
-        for (let i = 1; i < numPoints; i++) {
-            const angleChangeXY = this.seededRandFloat(-maxAngle, maxAngle);
-            const angleChangeZ = this.seededRandFloat(-maxAngle, maxAngle);
-            currentAngleXY += angleChangeXY;
-            currentAngleZ += angleChangeZ;
-            const angleRadXY = THREE.MathUtils.degToRad(currentAngleXY);
-            const angleRadZ = THREE.MathUtils.degToRad(currentAngleZ);
-            const lastPoint = points[points.length - 1];
-            const newX = lastPoint.x + distanceStep * Math.cos(angleRadXY);
-            const newY = lastPoint.y + distanceStep * Math.sin(angleRadXY);
-            const newZ = lastPoint.z + distanceStep * Math.sin(angleRadZ);
-            points.push({ x: newX, y: newY, z: newZ });
+        const trackParams = {
+            baseRadius: 120,       // Larger base radius for more space
+            radiusVariation: 0.1,  // Subtle radius changes
+            heightBase: 30,        // Lower base height
+            heightRange: 60,       // Maximum height variation
+            controlPoints: 8,      // Fewer control points for smoother curves
+            segments: 30           // More segments between control points
+        };
+
+        // Generate evenly spaced control points
+        const controlPoints = [];
+        for (let i = 0; i < trackParams.controlPoints; i++) {
+            const angle = (i / trackParams.controlPoints) * Math.PI * 2;
+            const t = i / trackParams.controlPoints;
+            
+            // Smooth radius variation
+            const radiusVariation = Math.sin(angle * 2) * trackParams.radiusVariation + 
+                                  Math.sin(angle * 3) * trackParams.radiusVariation * 0.5;
+            const radius = trackParams.baseRadius * (1 + radiusVariation);
+            
+            // Height variation with smooth transitions
+            const heightVariation = Math.sin(angle * 1.5) * trackParams.heightRange * 0.5 + 
+                                  Math.cos(angle * 2.5) * trackParams.heightRange * 0.3;
+            
+            controlPoints.push({
+                x: Math.cos(angle) * radius,
+                y: Math.sin(angle) * radius,
+                z: trackParams.heightBase + heightVariation
+            });
         }
-        
-        let openDirection = new THREE.Vector3(0, 0, 1);
-        if (points.length >= 2) {
-            const start = new THREE.Vector3(points[0].x, points[0].y, points[0].z);
-            const second = new THREE.Vector3(points[1].x, points[1].y, points[1].z);
-            openDirection = new THREE.Vector3().subVectors(second, start).normalize();
-        }
-        
-        if (points.length >= 2) {
-            const startPoint = points[0];
-            const lastPoint = points[points.length - 1];
-            const penultimatePoint = points[points.length - 2];
-            const closingPath = this.createClosingPath(lastPoint, startPoint, penultimatePoint, openDirection, distanceStep, maxAngle);
-            for (let pt of closingPath) {
-                points.push(pt);
+
+        // Generate smooth path using Catmull-Rom spline
+        for (let i = 0; i < controlPoints.length; i++) {
+            const p0 = controlPoints[(i - 1 + controlPoints.length) % controlPoints.length];
+            const p1 = controlPoints[i];
+            const p2 = controlPoints[(i + 1) % controlPoints.length];
+            const p3 = controlPoints[(i + 2) % controlPoints.length];
+
+            for (let j = 0; j < trackParams.segments; j++) {
+                const t = j / trackParams.segments;
+                const t2 = t * t;
+                const t3 = t2 * t;
+
+                // Catmull-Rom coefficients
+                const c0 = -0.5 * t3 + t2 - 0.5 * t;
+                const c1 = 1.5 * t3 - 2.5 * t2 + 1.0;
+                const c2 = -1.5 * t3 + 2.0 * t2 + 0.5 * t;
+                const c3 = 0.5 * t3 - 0.5 * t2;
+
+                points.push({
+                    x: c0 * p0.x + c1 * p1.x + c2 * p2.x + c3 * p3.x,
+                    y: c0 * p0.y + c1 * p1.y + c2 * p2.y + c3 * p3.y,
+                    z: c0 * p0.z + c1 * p1.z + c2 * p2.z + c3 * p3.z
+                });
             }
         }
-        return points;
+
+        // Apply final smoothing
+        const smoothedPoints = [];
+        const smoothingWindow = 3;
+        for (let i = 0; i < points.length; i++) {
+            let sumX = 0, sumY = 0, sumZ = 0;
+            let count = 0;
+            
+            for (let j = -smoothingWindow; j <= smoothingWindow; j++) {
+                const idx = (i + j + points.length) % points.length;
+                sumX += points[idx].x;
+                sumY += points[idx].y;
+                sumZ += points[idx].z;
+                count++;
+            }
+            
+            smoothedPoints.push({
+                x: sumX / count,
+                y: sumY / count,
+                z: sumZ / count
+            });
+        }
+
+        return smoothedPoints;
     }
 
-    // Creates a spline group (a THREE.Group) containing spheres, the spline line, and arrow helpers.
     createSplineGroup(numPoints, maxAngle, distanceStep) {
         const group = new THREE.Group();
         const splinePoints = this.createSplinePoints(numPoints, maxAngle, distanceStep);
         const vectors = splinePoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
 
-        // Save the start point.
         this.startPointCoord.copy(vectors[0]);
 
-        // Create spheres: first point dark green, last point dark red, others blue.
-        vectors.forEach((vector, i) => {
-            const sphereGeometry = new THREE.SphereGeometry(0.5, 32, 32);
-            let sphereMaterial;
-            if (i === 0) {
-                sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x006400 });
-            } else if (i === vectors.length - 1) {
-                sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x8B0000 });
-            } else {
-                sphereMaterial = new THREE.MeshBasicMaterial({ color: 0x0000ff });
-            }
-            const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
-            sphere.position.copy(vector);
-            group.add(sphere);
-        });
-
-        // Create a smooth Catmull-Rom spline from the points.
         const splineCurve = new THREE.CatmullRomCurve3(vectors, true, 'centripetal');
         const smoothPoints = splineCurve.getPoints(1500);
 
-        // Calculate offsets for road edges
-        const roadWidth = 1.5;
-        const leftVectors = [];
-        const rightVectors = [];
+        // Calculate road edges
+        const roadWidth = 12; // Wider road
+        const numRoadPoints = 10000;
+        const leftPoints = [];
+        const rightPoints = [];
 
-        for (let i = 0; i < vectors.length; i++) {
-            const vector = vectors[i];
-            const tangent = splineCurve.getTangentAt(i / (vectors.length - 1)).normalize();
-            const normal = new THREE.Vector3(-tangent.y, tangent.x, 0).normalize(); // Assuming Z is up
+        for (let i = 0; i <= numRoadPoints; i++) {
+            const t = i / numRoadPoints;
+            const point = splineCurve.getPoint(t);
+            const tangent = splineCurve.getTangent(t);
+            const normal = new THREE.Vector3(-tangent.y, tangent.x, 0).normalize();
 
-            const leftVector = new THREE.Vector3().copy(vector).add(normal.clone().multiplyScalar(roadWidth));
-            const rightVector = new THREE.Vector3().copy(vector).add(normal.clone().multiplyScalar(-roadWidth));
+            // Smooth banking calculation
+            const lookAhead = Math.min(t + 0.05, 1);
+            const lookBehind = Math.max(t - 0.05, 0);
+            const nextTangent = splineCurve.getTangent(lookAhead);
+            const prevTangent = splineCurve.getTangent(lookBehind);
+            
+            const forwardCurve = tangent.angleTo(nextTangent);
+            const backwardCurve = tangent.angleTo(prevTangent);
+            const curvature = Math.min(1, (forwardCurve + backwardCurve) * 0.7);
+            
+            const maxBankAngle = Math.PI * 0.2; // 36 degrees max banking
+            const bankingAngle = curvature * maxBankAngle;
+            
+            const bankingAxis = tangent;
+            const bankingQuat = new THREE.Quaternion().setFromAxisAngle(bankingAxis, bankingAngle);
+            const bankedNormal = normal.clone().applyQuaternion(bankingQuat);
 
-            leftVectors.push(leftVector);
-            rightVectors.push(rightVector);
+            leftPoints.push(point.clone().add(bankedNormal.multiplyScalar(roadWidth)));
+            rightPoints.push(point.clone().add(bankedNormal.multiplyScalar(-roadWidth)));
         }
 
-        // Create left road edge spline
-        const leftSplineCurve = new THREE.CatmullRomCurve3(leftVectors, true, 'centripetal');
-        const leftSmoothPoints = leftSplineCurve.getPoints(1500);
-        const leftSmoothGeometry = new THREE.BufferGeometry().setFromPoints(leftSmoothPoints);
-        const leftLineMaterial = new THREE.LineBasicMaterial({ color: 0x808080 }); // Gray color
-        const leftSmoothLine = new THREE.Line(leftSmoothGeometry, leftLineMaterial);
-        group.add(leftSmoothLine);
+        // Create road mesh with rainbow colors
+        const roadGeometry = new THREE.BufferGeometry();
+        const roadVertices = [];
+        const roadIndices = [];
+        const colors = [];
 
-        // Create right road edge spline
-        const rightSplineCurve = new THREE.CatmullRomCurve3(rightVectors, true, 'centripetal');
-        const rightSmoothPoints = rightSplineCurve.getPoints(1500);
-        const rightSmoothGeometry = new THREE.BufferGeometry().setFromPoints(rightSmoothPoints);
-        const rightLineMaterial = new THREE.LineBasicMaterial({ color: 0x808080 }); // Gray color
-        const rightSmoothLine = new THREE.Line(rightSmoothGeometry, rightLineMaterial);
-        group.add(rightSmoothLine);
+        const rainbowColors = [
+            new THREE.Color(0xff0000), // Red
+            new THREE.Color(0xff8800), // Orange
+            new THREE.Color(0xffff00), // Yellow
+            new THREE.Color(0x00ff00), // Green
+            new THREE.Color(0x0088ff), // Blue
+            new THREE.Color(0x8800ff)  // Purple
+        ];
 
-        const smoothGeometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
-        const lineMaterial = new THREE.LineBasicMaterial({ color: 0x39FF14 });
-        const smoothLine = new THREE.Line(smoothGeometry, lineMaterial);
-        group.add(smoothLine);
+        for (let i = 0; i < leftPoints.length; i++) {
+            roadVertices.push(
+                leftPoints[i].x, leftPoints[i].y, leftPoints[i].z,
+                rightPoints[i].x, rightPoints[i].y, rightPoints[i].z
+            );
 
-        // Visualize view directions at each sphere.
-        const arrowLength = 2;
-        let openDir = new THREE.Vector3(0, 0, 1);
-        if (vectors.length >= 2) {
-            openDir = new THREE.Vector3().subVectors(vectors[1], vectors[0]).normalize();
-        }
-        for (let i = 0; i < vectors.length; i++) {
-            const pos = vectors[i];
-            let forwardDir;
-            if (i < vectors.length - 1) {
-                forwardDir = new THREE.Vector3().subVectors(vectors[i + 1], pos).normalize();
-            } else {
-                forwardDir = openDir.clone().negate();
+            const colorIndex = Math.floor((i / leftPoints.length) * rainbowColors.length);
+            const nextColorIndex = (colorIndex + 1) % rainbowColors.length;
+            const mixFactor = (i / leftPoints.length) * rainbowColors.length - colorIndex;
+            
+            const color = new THREE.Color().lerpColors(
+                rainbowColors[colorIndex],
+                rainbowColors[nextColorIndex],
+                mixFactor
+            );
+            
+            colors.push(color.r, color.g, color.b);
+            colors.push(color.r, color.g, color.b);
+
+            if (i < leftPoints.length - 1) {
+                const baseIndex = i * 2;
+                roadIndices.push(
+                    baseIndex, baseIndex + 1, baseIndex + 2,
+                    baseIndex + 1, baseIndex + 3, baseIndex + 2
+                );
             }
-            const backwardDir = forwardDir.clone().negate();
-            const arrowForward = new THREE.ArrowHelper(forwardDir, pos, arrowLength, 0x00ff00);
-            const arrowBackward = new THREE.ArrowHelper(backwardDir, pos, arrowLength, 0xff0000);
-            group.add(arrowForward);
-            group.add(arrowBackward);
         }
+
+        roadGeometry.setAttribute('position', new THREE.Float32BufferAttribute(roadVertices, 3));
+        roadGeometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        roadGeometry.setIndex(roadIndices);
+        roadGeometry.computeVertexNormals();
+
+        // Create glowing road material
+        const roadMaterial = new THREE.MeshStandardMaterial({
+            vertexColors: true,
+            roughness: 0.2,
+            metalness: 0.8,
+            side: THREE.DoubleSide,
+            emissive: 0x444444,
+            emissiveIntensity: 0.5
+        });
+
+        const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+        group.add(roadMesh);
+
+        // Add glowing edges
+        const edgeLineMaterial = new THREE.LineBasicMaterial({ 
+            color: 0xffffff,
+            transparent: true,
+            opacity: 0.8
+        });
+        
+        const leftGeometry = new THREE.BufferGeometry().setFromPoints(leftPoints);
+        const rightGeometry = new THREE.BufferGeometry().setFromPoints(rightPoints);
+        group.add(new THREE.Line(leftGeometry, edgeLineMaterial));
+        group.add(new THREE.Line(rightGeometry, edgeLineMaterial));
+
         return group;
     }
 
-    // Passt die Kamera an die Spline-Route an
     adjustCameraToFitSpline(splineGroup) {
         const box = new THREE.Box3().setFromObject(splineGroup);
         const sphere = new THREE.Sphere();
@@ -238,32 +258,23 @@ export class SplineGraph extends GameObject {
         const player = GameObjectManager.getInstance().getObjectByType(Player);
         const camera = this.gameEngine.getCamera();
         const fov = THREE.MathUtils.degToRad(camera.fov);
-        const margin = 0.7; // Adjusted margin for better visibility
+        const margin = 0.7;
         const distance = (splineRadius * margin) / Math.sin(fov / 2);
         
-        // Position camera slightly above and behind to get a better overview
-        const offset = new THREE.Vector3(
-            0,
-            splineRadius * 0.3, // Lift camera up a bit
-            distance * 1.2 // Move camera back a bit more
-        );
+        const offset = new THREE.Vector3(0, splineRadius * 0.3, distance * 1.2);
         player.getControls().getObject().position.copy(center.clone().add(offset));
         
-        // Set far clipping plane to ensure everything is visible
         camera.far = Math.max(distance * 2.5, this.MIN_FAR);
         camera.updateProjectionMatrix();
-        
         camera.lookAt(center);
     }
 
-    // Updates the spline and adjusts the camera
     updateSpline(numPoints, maxAngle, distanceStep, seed) {
         this.setSeed(seed);
         const gameEngine = GameEngine.getInstance();
         const scene = gameEngine.getScene();
         if (this.splineGroup) scene.remove(this.splineGroup);
         this.splineGroup = this.createSplineGroup(numPoints, maxAngle, distanceStep);
-        // Set the current spline group for the input logic:
         const player = GameObjectManager.getInstance().getObjectByType(Player);
         player.setInputSplineGroup(this.splineGroup);
         scene.add(this.splineGroup);
@@ -271,12 +282,10 @@ export class SplineGraph extends GameObject {
         return this.splineGroup;
     }
 
-    // Getter for start point coordinates
     getStartPointCoord() {
         return this.startPointCoord;
     }
 
-    // GameObject update method
     update(deltaTime) {
         // Add any per-frame update logic here if needed
     }
