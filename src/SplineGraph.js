@@ -142,10 +142,10 @@ export class SplineGraph extends GameObject {
         const group = new THREE.Group();
         const splinePoints = this.createSplinePoints(numPoints, maxAngle, distanceStep);
         const vectors = splinePoints.map(p => new THREE.Vector3(p.x, p.y, p.z));
-        
+
         // Save the start point.
         this.startPointCoord.copy(vectors[0]);
-        
+
         // Create spheres: first point dark green, last point dark red, others blue.
         vectors.forEach((vector, i) => {
             const sphereGeometry = new THREE.SphereGeometry(0.5, 32, 32);
@@ -161,15 +161,49 @@ export class SplineGraph extends GameObject {
             sphere.position.copy(vector);
             group.add(sphere);
         });
-        
+
         // Create a smooth Catmull-Rom spline from the points.
         const splineCurve = new THREE.CatmullRomCurve3(vectors, true, 'centripetal');
-        const smoothPoints = splineCurve.getPoints(200);
+        const smoothPoints = splineCurve.getPoints(1500);
+
+        // Calculate offsets for road edges
+        const roadWidth = 1.5;
+        const leftVectors = [];
+        const rightVectors = [];
+
+        for (let i = 0; i < vectors.length; i++) {
+            const vector = vectors[i];
+            const tangent = splineCurve.getTangentAt(i / (vectors.length - 1)).normalize();
+            const normal = new THREE.Vector3(-tangent.y, tangent.x, 0).normalize(); // Assuming Z is up
+
+            const leftVector = new THREE.Vector3().copy(vector).add(normal.clone().multiplyScalar(roadWidth));
+            const rightVector = new THREE.Vector3().copy(vector).add(normal.clone().multiplyScalar(-roadWidth));
+
+            leftVectors.push(leftVector);
+            rightVectors.push(rightVector);
+        }
+
+        // Create left road edge spline
+        const leftSplineCurve = new THREE.CatmullRomCurve3(leftVectors, true, 'centripetal');
+        const leftSmoothPoints = leftSplineCurve.getPoints(1500);
+        const leftSmoothGeometry = new THREE.BufferGeometry().setFromPoints(leftSmoothPoints);
+        const leftLineMaterial = new THREE.LineBasicMaterial({ color: 0x808080 }); // Gray color
+        const leftSmoothLine = new THREE.Line(leftSmoothGeometry, leftLineMaterial);
+        group.add(leftSmoothLine);
+
+        // Create right road edge spline
+        const rightSplineCurve = new THREE.CatmullRomCurve3(rightVectors, true, 'centripetal');
+        const rightSmoothPoints = rightSplineCurve.getPoints(1500);
+        const rightSmoothGeometry = new THREE.BufferGeometry().setFromPoints(rightSmoothPoints);
+        const rightLineMaterial = new THREE.LineBasicMaterial({ color: 0x808080 }); // Gray color
+        const rightSmoothLine = new THREE.Line(rightSmoothGeometry, rightLineMaterial);
+        group.add(rightSmoothLine);
+
         const smoothGeometry = new THREE.BufferGeometry().setFromPoints(smoothPoints);
         const lineMaterial = new THREE.LineBasicMaterial({ color: 0x39FF14 });
         const smoothLine = new THREE.Line(smoothGeometry, lineMaterial);
         group.add(smoothLine);
-        
+
         // Visualize view directions at each sphere.
         const arrowLength = 2;
         let openDir = new THREE.Vector3(0, 0, 1);
