@@ -1,14 +1,18 @@
 // Player.js
 import * as THREE from 'three';
 import { GameObject } from './GameObject.js';
+import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
 
 export class Player extends GameObject {
-  constructor(camera, controls, domElement, moveSpeed = 100) {
+  constructor(moveSpeed = 100) {
     super();
-    this.camera = camera;
-    this.controls = controls;
+    this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1500);
+    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.controls.getObject().position.set(0, 200, 600);
     this.moveSpeed = moveSpeed;
-    this.domElement = domElement;
+    this.domElement = this.renderer.domElement;
+
+    this.gameEngine.setCurrentCamera(this.camera);
 
     // Interne Zustandsvariablen für Eingaben
     this.keys = {};
@@ -36,6 +40,8 @@ export class Player extends GameObject {
         this.onRightMouseDown(e);
       }
     };
+
+
     this.mouseUpHandler = (e) => {
       if (e.button === 0) {
         this.mouseButtons.left = false;
@@ -90,10 +96,10 @@ export class Player extends GameObject {
       const right = new THREE.Vector3().crossVectors(horizontalForward, up).normalize();
 
       if (this.keys['KeyW']) {
-        this.controls.getObject().position.addScaledVector(horizontalForward, this.moveSpeed * deltaTime);
+        this.controls.getObject().position.addScaledVector(forward, this.moveSpeed * deltaTime);
       }
       if (this.keys['KeyS']) {
-        this.controls.getObject().position.addScaledVector(horizontalForward, -this.moveSpeed * deltaTime);
+        this.controls.getObject().position.addScaledVector(forward, -this.moveSpeed * deltaTime);
       }
       if (this.keys['KeyA']) {
         this.controls.getObject().position.addScaledVector(right, -this.moveSpeed * deltaTime);
@@ -121,7 +127,7 @@ export class Player extends GameObject {
   // --- Mouse Event Handler ---
   onWheel(e) {
     e.preventDefault();
-    const moveFactor = 0.3;
+    const moveFactor = 0.5;
     const forward = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
     this.controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
@@ -228,5 +234,9 @@ export class Player extends GameObject {
 
   setInputSplineGroup(group) {
     this.splineGroup = group;
+  }
+
+  getControls() {
+    return this.controls;
   }
 }
