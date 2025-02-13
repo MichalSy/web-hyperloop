@@ -4,11 +4,11 @@ import { GameObject } from './GameObject.js';
 const SKYSPHERE_RADIUS = 800;
 
 export class Skybox extends GameObject {
-  constructor(renderer) {
+  constructor() {
     super();
     const geometry = new THREE.SphereGeometry(SKYSPHERE_RADIUS, 60, 40);
     const texture = new THREE.TextureLoader().load('img/skybox.png', () => {
-      texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+      texture.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     });
     texture.encoding = THREE.sRGBEncoding;
     texture.generateMipmaps = false;
@@ -19,6 +19,7 @@ export class Skybox extends GameObject {
     material.depthWrite = false;
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.renderOrder = -100;
+    this.addToScene(this.mesh);
   }
 
   update(deltaTime) {

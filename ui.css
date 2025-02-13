@@ -1,0 +1,15 @@
+/* src/ui.css */
+
+/* Import common styles */
+@import url('./common.css');
+
+/* UI-specific styles */
+#ui-container {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: var(--background-color);
+  padding: 10px;
+  color: var(--text-color);
+  font-family: var(--font-family);
+}
