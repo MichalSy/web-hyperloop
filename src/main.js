@@ -5,6 +5,7 @@ import { UI } from './ui.js';
 import { Player } from './Player.js';
 import { Skybox } from './skybox.js';
 import GameEngine from './GameEngine.js';
+import { TrackViewer } from './TrackViewer.js'; 
 
 document.addEventListener('DOMContentLoaded', () => {
   const gameEngine = GameEngine.getInstance();
@@ -15,8 +16,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const player = new Player();
   player.initiate();
 
-  const splineGraph = new SplineGraph();
-  splineGraph.initiate();
+  const trackviewer = new TrackViewer();
+  trackviewer.initiate();
 
   const ui = new UI();
   ui.initiate();
@@ -33,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Beispielaufruf:
   // 20 Kontrollpunkte, 300 Segmente, Breite=12, Dicke=0.2, Seed="Rainbow"
-  splineGraph.updateSpline(30, 300, 12, 0.2, "hanna");
+  // splineGraph.updateSpline(30, 300, 12, 0.2, "hanna");
 
 
 
