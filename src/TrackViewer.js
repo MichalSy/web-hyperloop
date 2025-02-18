@@ -25,16 +25,23 @@ function createRainbowTexture(width = 1024, height = 128) {
 }
 
 export class TrackViewer extends GameObject {
-  // Checkpoint-Einstellungen
+  // Konfigurationsparameter
   #checkpointCount = 15;
   #stepDistance = 100;
   #maxAngleDeg = 100;
   #tolerance = 0.1;
-  #trackWidth = 14;
+  #trackWidth = 20;
   #roadHeight = 1;
+  #sideWidth = 2;
+  #sideHeight = 2;
   #bankingFactor = 0.4;
   #maxBankingAngle = 25;
   #textureRepeat = 10;
+
+  // Standardvektoren für Frenet-Frames
+  #DEFAULT_NORMAL = new THREE.Vector3(0, 0, 1);
+  #DEFAULT_BINORMAL = new THREE.Vector3(0, 1, 0);
+  #DEFAULT_TANGENT = new THREE.Vector3(1, 0, 0);
 
   constructor() {
     super();
@@ -42,7 +49,6 @@ export class TrackViewer extends GameObject {
     this.splineGroup = new THREE.Group();
     this.wireframe = false;
     
-    // Beleuchtung hinzufügen
     this.addLighting();
     this.initCheckpoints();
     this.createTrack();
@@ -55,6 +61,7 @@ export class TrackViewer extends GameObject {
     const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
     const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
     directionalLight.position.set(100, 100, 100);
+    directionalLight.castShadow = true;
     this.addToScene(ambientLight);
     this.addToScene(directionalLight);
   }
@@ -71,7 +78,11 @@ export class TrackViewer extends GameObject {
     this.wireframe = !this.wireframe;
     this.splineGroup.traverse(child => {
       if (child.isMesh) {
-        child.material.forEach(mat => mat.wireframe = this.wireframe);
+        if (Array.isArray(child.material)) {
+          child.material.forEach(mat => mat.wireframe = this.wireframe);
+        } else {
+          child.material.wireframe = this.wireframe;
+        }
         child.material.needsUpdate = true;
       }
     });
@@ -156,20 +167,28 @@ export class TrackViewer extends GameObject {
       0.5
     );
 
-    const geometry = this.createRoadGeometry(closedSpline);
-    const materials = this.createRoadMaterials();
-    
-    const roadMesh = new THREE.Mesh(geometry, materials);
-    roadMesh.receiveShadow = true;
-    roadMesh.castShadow = true;
-    
-    // Debug-Wireframe
-    const edges = new THREE.EdgesGeometry(geometry);
-    const lineMaterial = new THREE.LineBasicMaterial({ color: 0x000000 });
-    const wireframe = new THREE.LineSegments(edges, lineMaterial);
-    // roadMesh.add(wireframe);
+    // Validierung der Spline-Punkte
+    console.assert(this.checkpointPositions.length >= 4, 
+      "Mindestens 4 Kontrollpunkte benötigt");
 
-    this.splineGroup.add(roadMesh);
+    const roadGeometry = this.createRoadGeometry(closedSpline);
+    const leftSideGeometry = this.createSideGeometry(closedSpline, 'left');
+    const rightSideGeometry = this.createSideGeometry(closedSpline, 'right');
+    
+    const roadMaterial = this.createRoadMaterial(createRainbowTexture());
+    const leftMaterial = this.createRoadMaterial(new THREE.Color(0xff8888));
+    const rightMaterial = this.createRoadMaterial(new THREE.Color(0x880000));
+
+    const roadMesh = new THREE.Mesh(roadGeometry, roadMaterial);
+    const leftMesh = new THREE.Mesh(leftSideGeometry, leftMaterial);
+    const rightMesh = new THREE.Mesh(rightSideGeometry, rightMaterial);
+    
+    [roadMesh, leftMesh, rightMesh].forEach(mesh => {
+      mesh.receiveShadow = true;
+      mesh.castShadow = true;
+      this.splineGroup.add(mesh);
+    });
+
     this.addToScene(this.splineGroup);
   }
 
@@ -178,121 +197,222 @@ export class TrackViewer extends GameObject {
     const vertices = [];
     const uvs = [];
     const indices = [];
-    const normals = [];
 
     const points = spline.getPoints(500);
     const frenetFrames = spline.computeFrenetFrames(points.length, true);
+    
+    // Validierung der Frame-Länge
+    console.assert(frenetFrames.normals.length === points.length,
+      "Frenet-Frames stimmen nicht mit Punkten überein");
+
+    const mainWidth = this.#trackWidth - 2 * this.#sideWidth;
 
     for (let i = 0; i < points.length; i++) {
       const t = i / (points.length - 1);
-      const safeIndex = THREE.MathUtils.clamp(i, 0, frenetFrames.normals.length - 1);
+      
+      // Sicherer Zugriff mit Fallback
+      const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
+      const frame = frenetFrames[safeIndex] || {};
+      const normal = frame.normal || this.#DEFAULT_NORMAL;
+      const binormal = frame.binormal || this.#DEFAULT_BINORMAL;
+      const tangent = frame.tangent || this.#DEFAULT_TANGENT;
 
-      const normal = frenetFrames.normals[safeIndex];
-      const binormal = frenetFrames.binormals[safeIndex];
-      const tangent = frenetFrames.tangents[safeIndex];
-      const halfWidth = this.#trackWidth / 2;
+      // Banking-Berechnung mit Fehlerabfang
+      let banking = 0;
+      try {
+        const nextIndex = Math.min(i + 1, frenetFrames.tangents.length - 1);
+        const curvature = tangent.angleTo(frenetFrames.tangents[nextIndex]);
+        banking = THREE.MathUtils.degToRad(
+          THREE.MathUtils.clamp(
+            curvature * this.#bankingFactor,
+            -this.#maxBankingAngle,
+            this.#maxBankingAngle
+          )
+        );
+      } catch (e) {
+        console.warn(`Banking-Berechnung fehlgeschlagen bei Index ${i}:`, e);
+      }
 
-      // Banking-Berechnung
-      const curvature = tangent.angleTo(frenetFrames.tangents[Math.min(i + 1, frenetFrames.tangents.length - 1)]);
-      const banking = THREE.MathUtils.degToRad(
-        THREE.MathUtils.clamp(
-          curvature * this.#bankingFactor,
-          -this.#maxBankingAngle,
-          this.#maxBankingAngle
-        )
-      );
-
-      // Straßenpunkte
-      const right = binormal
-        .clone()
-        .multiplyScalar(halfWidth)
-        .applyAxisAngle(tangent, banking);
+      const rotation = new THREE.Quaternion().setFromAxisAngle(tangent, banking);
+      const right = binormal.clone()
+        .multiplyScalar(mainWidth / 2)
+        .applyQuaternion(rotation);
+      
       const left = right.clone().negate();
       const center = points[i];
 
-      // Vertices
+      // Vertices mit Nullchecks
+      const topLeft = center.clone().add(left);
+      const topRight = center.clone().add(right);
+      const bottomLeft = topLeft.clone().sub(new THREE.Vector3(0, 0, this.#roadHeight));
+      const bottomRight = topRight.clone().sub(new THREE.Vector3(0, 0, this.#roadHeight));
+
       vertices.push(
-        // Links oben (Fahrbahn)
-        center.x + left.x, 
-        center.y + left.y, 
-        center.z + left.z,
-        
-        // Rechts oben (Fahrbahn)
-        center.x + right.x, 
-        center.y + right.y, 
-        center.z + right.z,
-        
-        // Links unten (Seitenwand)
-        center.x + left.x, 
-        center.y + left.y, 
-        center.z + left.z - this.#roadHeight,
-        
-        // Rechts unten (Seitenwand)
-        center.x + right.x, 
-        center.y + right.y, 
-        center.z + right.z - this.#roadHeight
+        topLeft.x, topLeft.y, topLeft.z,
+        topRight.x, topRight.y, topRight.z,
+        bottomLeft.x, bottomLeft.y, bottomLeft.z,
+        bottomRight.x, bottomRight.y, bottomRight.z
       );
 
-      // UVs
       uvs.push(t, 0, t, 1, t, 0, t, 1);
+    }
 
-      // Normals
-      const roadNormal = new THREE.Vector3(0, 0, 1).applyAxisAngle(tangent, banking);
-      normals.push(
-        ...roadNormal.toArray(),
-        ...roadNormal.toArray(),
-        ...normal.toArray(),
-        ...normal.toArray()
+    // Indizes mit Validierung
+    for (let i = 0; i < points.length - 1; i++) {
+      const offset = i * 4;
+      const nextOffset = (i + 1) * 4;
+
+      // Überlaufschutz
+      if (nextOffset + 3 >= vertices.length / 3) break;
+
+      indices.push(
+        // Oberfläche
+        offset, offset + 1, nextOffset,
+        offset + 1, nextOffset + 1, nextOffset,
+        
+        // Linke Seite
+        offset, nextOffset, offset + 2,
+        nextOffset, nextOffset + 2, offset + 2,
+        
+        // Rechte Seite
+        offset + 1, nextOffset + 1, offset + 3,
+        nextOffset + 1, nextOffset + 3, offset + 3,
+        
+        // Unterseite
+        offset + 2, nextOffset + 2, offset + 3,
+        nextOffset + 2, nextOffset + 3, offset + 3
       );
-
-      if (i > 0) {
-        const offset = i * 4;
-        indices.push(
-          // Oberfläche
-          offset - 4, offset, offset - 3,
-          offset - 3, offset, offset + 1,
-          
-          // Linke Seite
-          offset - 4, offset - 2, offset,
-          offset - 2, offset, offset + 2,
-          
-          // Rechte Seite
-          offset - 3, offset + 1, offset - 1,
-          offset - 1, offset + 1, offset + 3
-        );
-      }
     }
 
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
     geometry.setIndex(indices);
-
-    // Materialgruppen
-    geometry.clearGroups();
-    geometry.addGroup(0, indices.length, 0);
-
+    
+    // Automatische Normalenberechnung
+    geometry.computeVertexNormals();
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
-    geometry.computeVertexNormals();
 
     return geometry;
   }
 
-  createRoadMaterials() {
-    const rainbowTexture = createRainbowTexture();
-    rainbowTexture.repeat.set(this.#textureRepeat, 1);
-    rainbowTexture.wrapS = THREE.RepeatWrapping;
-    rainbowTexture.needsUpdate = true;
+  createSideGeometry(spline, side) {
+    const geometry = new THREE.BufferGeometry();
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
 
-    return [
-      new THREE.MeshPhongMaterial({ // Fahrbahn
-        map: rainbowTexture,
-        side: THREE.DoubleSide,
-        shininess: 50,
-        specular: 0x222222
-      })
-    ];
+    const points = spline.getPoints(500);
+    const frenetFrames = spline.computeFrenetFrames(points.length, true);
+    const isLeft = side === 'left';
+
+    for (let i = 0; i < points.length; i++) {
+      const t = i / (points.length - 1);
+      
+      // Sicherer Zugriff mit Fallback
+      const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
+      const frame = frenetFrames[safeIndex] || {};
+      const normal = frame.normal || this.#DEFAULT_NORMAL;
+      const binormal = frame.binormal || this.#DEFAULT_BINORMAL;
+      const tangent = frame.tangent || this.#DEFAULT_TANGENT;
+
+      // Banking-Berechnung mit Fehlerabfang
+      let banking = 0;
+      try {
+        const nextIndex = Math.min(i + 1, frenetFrames.tangents.length - 1);
+        const curvature = tangent.angleTo(frenetFrames.tangents[nextIndex]);
+        banking = THREE.MathUtils.degToRad(
+          THREE.MathUtils.clamp(
+            curvature * this.#bankingFactor,
+            -this.#maxBankingAngle,
+            this.#maxBankingAngle
+          )
+        );
+      } catch (e) {
+        console.warn(`Seiten-Banking fehlgeschlagen bei Index ${i}:`, e);
+      }
+
+      const rotation = new THREE.Quaternion().setFromAxisAngle(tangent, banking);
+      const offset = binormal.clone()
+        .multiplyScalar((this.#trackWidth / 2 - this.#sideWidth / 2) * (isLeft ? -1 : 1))
+        .applyQuaternion(rotation);
+
+      const outer = binormal.clone()
+        .multiplyScalar((this.#trackWidth / 2 + this.#sideWidth / 2) * (isLeft ? -1 : 1))
+        .applyQuaternion(rotation);
+
+      const center = points[i];
+
+      // Vertices
+      const topInner = center.clone().add(offset);
+      const topOuter = center.clone().add(outer);
+      const bottomInner = topInner.clone().sub(new THREE.Vector3(0, 0, this.#sideHeight));
+      const bottomOuter = topOuter.clone().sub(new THREE.Vector3(0, 0, this.#sideHeight));
+
+      vertices.push(
+        topInner.x, topInner.y, topInner.z,
+        topOuter.x, topOuter.y, topOuter.z,
+        bottomInner.x, bottomInner.y, bottomInner.z,
+        bottomOuter.x, bottomOuter.y, bottomOuter.z
+      );
+
+      uvs.push(t, 0, t, 1, t, 0, t, 1);
+    }
+
+    // Indizes mit Validierung
+    for (let i = 0; i < points.length - 1; i++) {
+      const offset = i * 4;
+      const nextOffset = (i + 1) * 4;
+
+      if (nextOffset + 3 >= vertices.length / 3) break;
+
+      indices.push(
+        // Oberfläche
+        offset, offset + 1, nextOffset,
+        offset + 1, nextOffset + 1, nextOffset,
+        
+        // Außenseite
+        offset + 1, nextOffset + 1, offset + 3,
+        nextOffset + 1, nextOffset + 3, offset + 3,
+        
+        // Unterseite
+        offset + 2, nextOffset + 2, offset + 3,
+        nextOffset + 2, nextOffset + 3, offset + 3,
+        
+        // Innenseite
+        offset, nextOffset, offset + 2,
+        nextOffset, nextOffset + 2, offset + 2
+      );
+    }
+
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setIndex(indices);
+    
+    // Automatische Normalenberechnung
+    geometry.computeVertexNormals();
+    geometry.computeBoundingSphere();
+
+    return geometry;
+  }
+
+  createRoadMaterial(map) {
+    const material = new THREE.MeshPhongMaterial({
+      map: map instanceof THREE.Color ? null : map,
+      color: map instanceof THREE.Color ? map : 0xffffff,
+      side: THREE.DoubleSide,
+      shininess: 50,
+      specular: 0x222222,
+      shadowSide: THREE.BackSide
+    });
+
+    if (map instanceof THREE.Texture) {
+      map.repeat.set(this.#textureRepeat, 1);
+      map.wrapS = THREE.RepeatWrapping;
+      map.needsUpdate = true;
+    }
+    
+    return material;
   }
 
   focusOnTrack() {
@@ -321,18 +441,17 @@ export class TrackViewer extends GameObject {
     this.checkpointPositions.forEach((pos, i) => {
       const marker = new THREE.Mesh(markerGeometry, markerMaterial);
       marker.position.copy(pos);
-      marker.position.z += 2; // Über der Strecke
+      marker.position.z += 2;
       marker.castShadow = true;
       this.addToScene(marker);
     });
   }
 
   update(deltaTime) {
-    // Texturanimation
     this.splineGroup.traverse(child => {
-      if (child.isMesh && child.material[0]?.map) {
-        child.material[0].map.offset.x += deltaTime * 0.1;
-        child.material[0].map.needsUpdate = true;
+      if (child.isMesh && child.material.map) {
+        child.material.map.offset.x += deltaTime * 0.1;
+        child.material.map.needsUpdate = true;
       }
     });
   }
