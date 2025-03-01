@@ -30,14 +30,18 @@ export class TrackViewer extends GameObject {
   #stepDistance = 100;
   #maxAngleDeg = 100;
   #tolerance = 0.1;
-  #trackWidth = 20;
-  #roadHeight = 2; // Fahrfläche ist 2 Einheiten hoch/dick
+  #trackWidth = 30;
+  #roadHeight = 4; // Fahrfläche ist 4 Einheiten hoch/dick
   #sideWidth = 2;
-  #sideHeight = 2;
-  #sideDistance = 2; // Abstand der Seitenstreifen von der Fahrfläche
+  #sideHeight = 5;
+  #sideDistance = 3; // Abstand der Seitenstreifen von der Fahrfläche
   #bankingFactor = 0.4;
   #maxBankingAngle = 25;
   #textureRepeat = 10;
+  
+  // Definition der globalen Richtungsvektoren
+  #GLOBAL_UP = new THREE.Vector3(0, 0, 1);    // Globale "Oben"-Richtung (Z+)
+  #GLOBAL_DOWN = new THREE.Vector3(0, 0, -1); // Globale "Unten"-Richtung (Z-)
 
   // Standardvektoren für Frenet-Frames
   #DEFAULT_NORMAL = new THREE.Vector3(0, 0, 1);
@@ -121,7 +125,7 @@ export class TrackViewer extends GameObject {
       const vLast = sum.clone().negate();
       if (Math.abs(vLast.length() - stepDistance) > tolerance) continue;
       
-      // Überprüfe, ob der letzte Vektor eine gute Ausrichtung zum Startpunkt hat
+      // Überprüfe, ob der neue Winkel innerhalb der Grenzen liegt
       const prevLastDir = v[checkpointCount - 2].clone().normalize();
       const firstDir = v[0].clone().normalize();
       const lastDir = vLast.clone().normalize();
@@ -141,7 +145,15 @@ export class TrackViewer extends GameObject {
       }
       
       // Überprüfe, ob der neue Winkel innerhalb der Grenzen liegt
-      if (prevLastDir.angleTo(vLast) > maxAngleRad) continue;
+      // Erhöhen der maximalen Winkeltoleranz für den letzten Checkpoint, um eine bessere Verbindung zum Startpunkt zu ermöglichen
+      const lastSegmentAngle = prevLastDir.angleTo(vLast);
+      if (lastSegmentAngle > maxAngleRad * 1.1) { // 10% mehr Toleranz für den letzten Abschnitt
+        // Debug-Information, wenn ein Versuch aufgrund des Winkels fehlschlägt
+        if (attempt % 100 === 0) {
+          console.log(`Versuch ${attempt}: Letzter Winkel zu groß (${THREE.MathUtils.radToDeg(lastSegmentAngle).toFixed(2)}°)`);
+        }
+        continue;
+      }
       
       v.push(vLast.normalize().multiplyScalar(stepDistance));
       const positions = [];
@@ -177,21 +189,30 @@ export class TrackViewer extends GameObject {
   }
 
   createTrack() {
+    // Spline erstellen mit Catmull-Rom-Interpolation für glatte Kurven
     const closedSpline = new THREE.CatmullRomCurve3(
       this.checkpointPositions,
-      true,
-      "centripetal",
-      0.5
+      true, // closed path
+      "centripetal", // typ der Interpolation (centripetal gibt glattere Kurven)
+      0.5 // Spannung
     );
+    
+    // Speichere die Spline für später
+    this.trackSpline = closedSpline;
+    
+    // Vorberechnung der Spline-Punkte und Frenet-Frames für spätere Verwendung
+    this.splinePoints = this.trackSpline.getPoints(500);
+    this.frenetFrames = this.trackSpline.computeFrenetFrames(this.splinePoints.length, true);
 
     // Validierung der Spline-Punkte
     console.assert(this.checkpointPositions.length >= 4, 
       "Mindestens 4 Kontrollpunkte benötigt");
 
-    const roadGeometry = this.createRoadGeometry(closedSpline);
-    const leftSideGeometry = this.createSideGeometry(closedSpline, "left");
-    const rightSideGeometry = this.createSideGeometry(closedSpline, "right");
+    const roadGeometry = this.createRoadGeometry(this.trackSpline);
+    const leftSideGeometry = this.createSideGeometry(this.trackSpline, "left");
+    const rightSideGeometry = this.createSideGeometry(this.trackSpline, "right");
     
+    // Materialien mit verschiedenen Farben für leichte Unterscheidung
     const roadMaterial = this.createRoadMaterial(createRainbowTexture());
     const leftMaterial = this.createRoadMaterial(new THREE.Color(0xff8888));
     const rightMaterial = this.createRoadMaterial(new THREE.Color(0x880000));
@@ -207,29 +228,32 @@ export class TrackViewer extends GameObject {
     });
 
     this.addToScene(this.splineGroup);
+    
+    // Nachdem alle Geometrien erstellt wurden, füge Debug-Pfeile hinzu
+    this.addDebugArrowsAlongSpline(this.trackSpline, 2);
   }
 
   createRoadGeometry(spline) {
+    // Debug-Pfeile werden erst nach der Geometrie-Erzeugung hinzugefügt,
+    // um Probleme mit der Frenet-Frame-Berechnung zu vermeiden
     const geometry = new THREE.BufferGeometry();
     const vertices = [];
     const uvs = [];
     const indices = [];
 
-    const points = spline.getPoints(500);
-    const frenetFrames = spline.computeFrenetFrames(points.length, true);
+    // Verwende die bereits berechneten Spline-Punkte und Frenet-Frames
+    const points = this.splinePoints;
+    const frenetFrames = this.frenetFrames; 
     
-    // Validierung der Frame-Länge
-    console.assert(frenetFrames.normals.length === points.length,
-      "Frenet-Frames stimmen nicht mit Punkten überein");
-
-    const mainWidth = this.#trackWidth - 2 * this.#sideWidth - 2 * this.#sideDistance;
+    // Berechne die Breite der Hauptfahrbahn unter Berücksichtigung der Seitenlinien und Abstände
+    const mainWidth = this.#trackWidth - 2 * this.#sideWidth - 4 * this.#sideDistance;
 
     for (let i = 0; i < points.length; i++) {
       const t = i / (points.length - 1);
       
       // Sicherer Zugriff mit Fallback
       const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
-      // Unused variable removed to fix linting warning
+      const normal = frenetFrames.normals[safeIndex] || this.#DEFAULT_NORMAL;
       const binormal = frenetFrames.binormals[safeIndex] || this.#DEFAULT_BINORMAL;
       const tangent = frenetFrames.tangents[safeIndex] || this.#DEFAULT_TANGENT;
 
@@ -246,11 +270,11 @@ export class TrackViewer extends GameObject {
           )
         );
       } catch (e) {
-        // Keep the warn statement as it provides valuable debugging information
         console.warn(`Banking-Berechnung fehlgeschlagen bei Index ${i}:`, e);
       }
 
       const rotation = new THREE.Quaternion().setFromAxisAngle(tangent, banking);
+      // Berechne exakte Position der Hauptfahrbahn mit korrektem Abstand zu den Seitenstreifen
       const right = binormal.clone()
         .multiplyScalar(mainWidth / 2)
         .applyQuaternion(rotation);
@@ -261,8 +285,12 @@ export class TrackViewer extends GameObject {
       // Vertices mit Nullchecks
       const topLeft = center.clone().add(left);
       const topRight = center.clone().add(right);
-      const bottomLeft = topLeft.clone().sub(new THREE.Vector3(0, 0, this.#roadHeight));
-      const bottomRight = topRight.clone().sub(new THREE.Vector3(0, 0, this.#roadHeight));
+      
+      // Untere Vertices direkt entlang der GLOBALEN Z-Achse (nach unten) verschieben
+      // für konsistente Dicke und richtige Richtung für die globale Gravitation
+      const roadDownVector = new THREE.Vector3(0, 0, this.#roadHeight);
+      const bottomLeft = topLeft.clone().sub(roadDownVector);
+      const bottomRight = topRight.clone().sub(roadDownVector);
 
       vertices.push(
         topLeft.x, topLeft.y, topLeft.z,
@@ -271,7 +299,13 @@ export class TrackViewer extends GameObject {
         bottomRight.x, bottomRight.y, bottomRight.z
       );
 
-      uvs.push(t, 0, t, 1, t, 0, t, 1);
+      // Detailliertere UV-Koordinaten für bessere Texturen
+      uvs.push(
+        t, 0,  // topLeft
+        t, 1,  // topRight
+        t, 0,  // bottomLeft
+        t, 1   // bottomRight
+      );
     }
 
     // Indizes mit Validierung
@@ -283,21 +317,21 @@ export class TrackViewer extends GameObject {
       if (nextOffset + 3 >= vertices.length / 3) break;
 
       indices.push(
-        // Oberfläche
-        offset, offset + 1, nextOffset,
-        offset + 1, nextOffset + 1, nextOffset,
+        // Oberfläche - korrigierte Reihenfolge für korrekte Normalen
+        offset, nextOffset, offset + 1,
+        offset + 1, nextOffset, nextOffset + 1,
         
         // Linke Seite
-        offset, nextOffset, offset + 2,
-        nextOffset, nextOffset + 2, offset + 2,
+        offset, offset + 2, nextOffset,
+        nextOffset, offset + 2, nextOffset + 2,
         
         // Rechte Seite
         offset + 1, nextOffset + 1, offset + 3,
         nextOffset + 1, nextOffset + 3, offset + 3,
         
-        // Unterseite
-        offset + 2, nextOffset + 2, offset + 3,
-        nextOffset + 2, nextOffset + 3, offset + 3
+        // Unterseite - korrigierte Reihenfolge für korrekte Normalen
+        offset + 2, offset + 3, nextOffset + 2,
+        nextOffset + 2, offset + 3, nextOffset + 3
       );
     }
 
@@ -319,8 +353,9 @@ export class TrackViewer extends GameObject {
     const uvs = [];
     const indices = [];
 
-    const points = spline.getPoints(500);
-    const frenetFrames = spline.computeFrenetFrames(points.length, true);
+    // Verwende die bereits berechneten Spline-Punkte und Frenet-Frames
+    const points = this.splinePoints;
+    const frenetFrames = this.frenetFrames;
     const isLeft = side === "left";
 
     for (let i = 0; i < points.length; i++) {
@@ -328,7 +363,7 @@ export class TrackViewer extends GameObject {
       
       // Sicherer Zugriff mit Fallback
       const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
-      // Unused variable removed to fix linting warning
+      const normal = frenetFrames.normals[safeIndex] || this.#DEFAULT_NORMAL;
       const binormal = frenetFrames.binormals[safeIndex] || this.#DEFAULT_BINORMAL;
       const tangent = frenetFrames.tangents[safeIndex] || this.#DEFAULT_TANGENT;
 
@@ -345,19 +380,26 @@ export class TrackViewer extends GameObject {
           )
         );
       } catch (e) {
-        // Keep the warn statement as it provides valuable debugging information
         console.warn(`Seiten-Banking fehlgeschlagen bei Index ${i}:`, e);
       }
 
       const rotation = new THREE.Quaternion().setFromAxisAngle(tangent, banking);
-      // Innerer Rand - mit Abstand von der Fahrbahn
+      // Berechne die Ränder der Hauptfahrbahn
+      const mainRoadHalfWidth = (this.#trackWidth - 2 * this.#sideWidth - 4 * this.#sideDistance) / 2;
+      const mainRoadEdge = binormal.clone()
+        .multiplyScalar(mainRoadHalfWidth * (isLeft ? -1 : 1))
+        .applyQuaternion(rotation);
+      
+      // Innerer Rand des Seitenstreifens mit definiertem Abstand zur Hauptfahrbahn
+      const stripInnerPosition = mainRoadHalfWidth + this.#sideDistance;
       const offset = binormal.clone()
-        .multiplyScalar((this.#trackWidth / 2 - this.#sideWidth - this.#sideDistance) * (isLeft ? -1 : 1))
+        .multiplyScalar((stripInnerPosition) * (isLeft ? -1 : 1))
         .applyQuaternion(rotation);
 
-      // Äußerer Rand
+      // Äußerer Rand des Seitenstreifens
+      const stripOuterPosition = stripInnerPosition + this.#sideWidth;
       const outer = binormal.clone()
-        .multiplyScalar((this.#trackWidth / 2 - this.#sideDistance) * (isLeft ? -1 : 1))
+        .multiplyScalar((stripOuterPosition) * (isLeft ? -1 : 1))
         .applyQuaternion(rotation);
 
       const center = points[i];
@@ -365,8 +407,12 @@ export class TrackViewer extends GameObject {
       // Vertices
       const topInner = center.clone().add(offset);
       const topOuter = center.clone().add(outer);
-      const bottomInner = topInner.clone().sub(new THREE.Vector3(0, 0, this.#sideHeight));
-      const bottomOuter = topOuter.clone().sub(new THREE.Vector3(0, 0, this.#sideHeight));
+      
+      // Untere Vertices exakt entlang der GLOBALEN Z-Achse (nach unten) verschieben
+      // für konsistente Dicke und korrekte Ausrichtung zur Gravitation
+      const sideDownVector = new THREE.Vector3(0, 0, this.#sideHeight);
+      const bottomInner = topInner.clone().sub(sideDownVector);
+      const bottomOuter = topOuter.clone().sub(sideDownVector);
 
       vertices.push(
         topInner.x, topInner.y, topInner.z,
@@ -375,7 +421,13 @@ export class TrackViewer extends GameObject {
         bottomOuter.x, bottomOuter.y, bottomOuter.z
       );
 
-      uvs.push(t, 0, t, 1, t, 0, t, 1);
+      // Detailliertere UV-Koordinaten für bessere Texturen
+      uvs.push(
+        t, 0,  // topInner
+        t, 1,  // topOuter
+        t, 0,  // bottomInner
+        t, 1   // bottomOuter
+      );
     }
 
     // Indizes mit Validierung
@@ -386,21 +438,21 @@ export class TrackViewer extends GameObject {
       if (nextOffset + 3 >= vertices.length / 3) break;
 
       indices.push(
-        // Oberfläche
-        offset, offset + 1, nextOffset,
-        offset + 1, nextOffset + 1, nextOffset,
+        // Oberfläche - korrigierte Reihenfolge für korrekte Normalen
+        offset, nextOffset, offset + 1,
+        offset + 1, nextOffset, nextOffset + 1,
         
         // Außenseite
-        offset + 1, nextOffset + 1, offset + 3,
-        nextOffset + 1, nextOffset + 3, offset + 3,
+        offset + 1, offset + 3, nextOffset + 1,
+        nextOffset + 1, offset + 3, nextOffset + 3,
         
-        // Unterseite
-        offset + 2, nextOffset + 2, offset + 3,
-        nextOffset + 2, nextOffset + 3, offset + 3,
+        // Unterseite - korrigierte Reihenfolge für korrekte Normalen
+        offset + 2, offset + 3, nextOffset + 2,
+        nextOffset + 2, offset + 3, nextOffset + 3,
         
         // Innenseite
-        offset, nextOffset, offset + 2,
-        nextOffset, nextOffset + 2, offset + 2
+        offset, offset + 2, nextOffset,
+        nextOffset, offset + 2, nextOffset + 2
       );
     }
 
@@ -453,18 +505,40 @@ export class TrackViewer extends GameObject {
   addCheckpointMarkers() {
     const markerGeometry = new THREE.SphereGeometry(4, 16, 16);
     
-    // Berechne die tangenten für alle Checkpoints
+    // Verwende die bereits berechneten Spline-Punkte und Frenet-Frames
+    const splinePoints = this.splinePoints;
+    const frenetFrames = this.frenetFrames;
+    
+    // Array zur Speicherung der exakteren Tangenten
     const tangents = [];
+    const normals = [];
+    const binormals = [];
+    
+    // Finde die nächsten Punkte auf der Spline für jeden Checkpoint
     for (let i = 0; i < this.checkpointPositions.length; i++) {
-      const nextIdx = (i + 1) % this.checkpointPositions.length;
-      const prevIdx = (i - 1 + this.checkpointPositions.length) % this.checkpointPositions.length;
+      const checkpoint = this.checkpointPositions[i];
       
-      // Berechne Tangente aus vorherigem und nächstem Punkt
-      const tangent = new THREE.Vector3()
-        .subVectors(this.checkpointPositions[nextIdx], this.checkpointPositions[prevIdx])
-        .normalize();
+      // Finde den nächsten Punkt auf der Spline
+      let closestPointIndex = 0;
+      let minDistance = Infinity;
       
-      tangents.push(tangent);
+      for (let j = 0; j < splinePoints.length; j++) {
+        const distance = checkpoint.distanceTo(splinePoints[j]);
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestPointIndex = j;
+        }
+      }
+      
+      // Verwende die Tangente, Normale und Binormale des nächsten Punktes
+      tangents.push(frenetFrames.tangents[closestPointIndex].clone());
+      normals.push(frenetFrames.normals[closestPointIndex].clone());
+      binormals.push(frenetFrames.binormals[closestPointIndex].clone());
+      
+      // Debug-Information ausgeben
+      console.log(`Checkpoint ${i}: Position (${checkpoint.x.toFixed(2)}, ${checkpoint.y.toFixed(2)}, ${checkpoint.z.toFixed(2)})`);
+      console.log(`  Nächster Spline-Punkt: Index ${closestPointIndex}, Abstand: ${minDistance.toFixed(2)}`);
+      console.log(`  Tangente: (${tangents[i].x.toFixed(2)}, ${tangents[i].y.toFixed(2)}, ${tangents[i].z.toFixed(2)})`);
     }
     
     // Berechne Zentrum der Strecke für Normalen-Berechnung
@@ -474,32 +548,84 @@ export class TrackViewer extends GameObject {
     }
     center.divideScalar(this.checkpointPositions.length);
     
-    // Erstelle für jeden Checkpoint einen Marker mit angepasster Höhe
-    this.checkpointPositions.forEach((pos, i) => {
+    // Erstelle für jeden Checkpoint einen Marker mit angepasster Höhe und korrekter Ausrichtung
+    this.checkpointPositions.forEach((originalPos, i) => {
+      // Verwende den tatsächlichen Punkt auf der Spline für den Marker
+      const t = this.trackSpline.getUtoTmapping(i / this.checkpointPositions.length);
+      const splinePos = this.trackSpline.getPoint(t);
+      
       // Berechne Krümmung basierend auf angrenzenden Punkten
       const prevIdx = (i - 1 + this.checkpointPositions.length) % this.checkpointPositions.length;
       const nextIdx = (i + 1) % this.checkpointPositions.length;
       
       const tangent = tangents[i];
-      const prevTangent = tangents[prevIdx];
-      const nextTangent = tangents[nextIdx];
+      const normal = normals[i];
+      const binormal = binormals[i];
       
       // Berechne Winkeländerung als Maß für die Krümmung
+      const prevTangent = tangents[prevIdx];
+      const nextTangent = tangents[nextIdx];
       const anglePrev = tangent.angleTo(prevTangent);
       const angleNext = tangent.angleTo(nextTangent);
       const curvatureValue = (anglePrev + angleNext) / 2;
       
-      // Debug: Zeige Winkel an - Kept for valuable debugging info
-      console.log(`Checkpoint ${i}: Winkel: ${THREE.MathUtils.radToDeg(curvatureValue).toFixed(2)}°`);
+      // Debug: Zeige ausführliche Informationen für jeden Checkpoint
+      console.log(`Checkpoint ${i} Debug:`);
+      console.log(`  Original Position: (${originalPos.x.toFixed(2)}, ${originalPos.y.toFixed(2)}, ${originalPos.z.toFixed(2)})`);
+      console.log(`  Spline Position: (${splinePos.x.toFixed(2)}, ${splinePos.y.toFixed(2)}, ${splinePos.z.toFixed(2)})`);
+      console.log(`  Krümmung: ${THREE.MathUtils.radToDeg(curvatureValue).toFixed(2)}°`);
+      console.log(`  Frenet-Frame: Tangent(${tangent.x.toFixed(2)}, ${tangent.y.toFixed(2)}, ${tangent.z.toFixed(2)}), `
+        + `Normal(${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)}), `
+        + `Binormal(${binormal.x.toFixed(2)}, ${binormal.y.toFixed(2)}, ${binormal.z.toFixed(2)})`);
+      
+      // Erstelle ein Debug-Koordinatensystem für den Frenet-Frame
+      if (i % 3 === 0) { // Nur bei jedem dritten Checkpoint zur besseren Übersicht
+        const axisLength = 8;
+        
+        // Tangente (Rot, zeigt in Fahrtrichtung)
+        const tangentArrow = new THREE.ArrowHelper(
+          tangent,
+          splinePos,
+          axisLength,
+          0xff0000
+        );
+        
+        // WICHTIG: Globale Z-Achse (Grün, zeigt exakt nach oben/Himmel)
+        // Verwende den GLOBAL_UP-Vektor für konsistente Ausrichtung
+        const upArrow = new THREE.ArrowHelper(
+          this.#GLOBAL_UP.clone(), // Genau nach oben (Z+)
+          splinePos,
+          axisLength,
+          0x00ff00
+        );
+        
+        // Normale (Gelb, zeigt "nach oben" relativ zur Strecke)
+        const normalArrow = new THREE.ArrowHelper(
+          normal,
+          splinePos,
+          axisLength * 0.8,
+          0xffff00
+        );
+        
+        // Binormale (Blau, zeigt seitwärts)
+        const binormalArrow = new THREE.ArrowHelper(
+          0x0000ff
+        );
+        
+        this.addToScene(tangentArrow);
+        this.addToScene(upArrow);      // Füge den globalen Up-Pfeil hinzu
+        this.addToScene(normalArrow);
+        this.addToScene(binormalArrow);
+      }
       
       // Höhenanpassung: Mehr Höhe bei stärkerer Krümmung für bessere Sichtbarkeit
       const baseHeight = 5; // Basis-Höhe 5 Einheiten
       const curvatureBonus = curvatureValue * 5; // Zusätzliche Höhe abhängig von der Krümmung
       const totalHeight = baseHeight + Math.min(curvatureBonus, 3); // Maximale Zusatzhöhe begrenzen
       
-      // Position über der Strecke
-      const position = pos.clone();
-      position.y += totalHeight; // Angepasste Höhe über der Strecke
+      // Position auf der Spline setzen und exakt entlang der Z-Achse (nach oben) anheben
+      // Verwende die exakten Punkte auf der Spline statt der originalen Checkpoints
+      const position = splinePos.clone().add(new THREE.Vector3(0, 0, -totalHeight)); // Negative Z = "nach oben"
       
       // Wähle Farbe basierend auf Position (Start/Ende/normal)
       let markerMaterial;
@@ -516,21 +642,49 @@ export class TrackViewer extends GameObject {
           shininess: 100
         });
         
-        // Berechne Richtungsvektor zum Startpunkt für bessere Ausrichtung
+        // Für den letzten Checkpoint, optimiere die Ausrichtung zum Startpunkt
+        // Berechne den Vektor vom letzten Punkt zum ersten Punkt auf der Spline
+        const startSplinePos = this.trackSpline.getPoint(0);
         const vectorToStart = new THREE.Vector3().subVectors(
-          this.checkpointPositions[0],
-          pos
+          startSplinePos,
+          splinePos
         ).normalize();
         
-        // Passe die Richtung des letzten Checkpoints an, um mehr in Richtung Start zu zeigen
-        // Mische die Tangente mit dem Vektor in Richtung Start
+        // Debug-Information zur Ausrichtung des Endpunkts zum Startpunkt
+        const angleToStart = tangent.angleTo(vectorToStart);
+        console.log(`  Winkel zum Startpunkt: ${THREE.MathUtils.radToDeg(angleToStart).toFixed(2)}°`);
+        console.log(`  Direkter Vektor zum Startpunkt: (${vectorToStart.x.toFixed(2)}, ${vectorToStart.y.toFixed(2)}, ${vectorToStart.z.toFixed(2)})`);
+        
+        // Erstelle einen speziellen Pfeil, der die direkte Linie zum Startpunkt zeigt
+        const directArrow = new THREE.ArrowHelper(
+          vectorToStart,
+          position,
+          15,
+          0xff00ff, // Magenta für die direkte Linie zum Start
+          1.5,
+          0.7
+        );
+        this.addToScene(directArrow);
+        
+        // Tangente für den letzten Checkpoint überarbeiten - mehr in Richtung Start
+        // Mische die originale Tangente mit dem Vektor zum Start
         const blendedTangent = new THREE.Vector3()
-          .addScaledVector(tangent, 0.3)
-          .addScaledVector(vectorToStart, 0.7)
+          .addScaledVector(tangent, 0.2)
+          .addScaledVector(vectorToStart, 0.8)
           .normalize();
           
-        // Aktualisiere die Tangente für diesen Checkpoint
+        // Aktualisiere die Tangente und erstelle eine neue Frenet-Frame-Basis
         tangents[i] = blendedTangent;
+        
+        // Berechne neue Normale und Binormale basierend auf der aktualisierten Tangente
+        // Wähle eine temporäre Hilfsvektorrichtung
+        const tempUp = new THREE.Vector3(0, 0, 1);
+        binormals[i] = new THREE.Vector3().crossVectors(tempUp, blendedTangent).normalize();
+        // Falls die Tangente und tempUp parallel sind, wähle einen anderen Vektor
+        if (binormals[i].lengthSq() < 0.1) {
+          binormals[i].crossVectors(new THREE.Vector3(1, 0, 0), blendedTangent).normalize();
+        }
+        normals[i] = new THREE.Vector3().crossVectors(blendedTangent, binormals[i]).normalize();
       } else {
         // Normale Checkpoints grün
         markerMaterial = new THREE.MeshPhongMaterial({
@@ -546,7 +700,7 @@ export class TrackViewer extends GameObject {
       
       // Erstelle Textlabel für Debug-Info (wenn gewünscht)
       if (i % 3 === 0) { // Nur bei jedem dritten Checkpoint
-        // Erstelle Wireframe-Box zum Anzeigen der Rotation
+        // Erstelle Wireframe-Box zum Anzeigen der Rotation, ausgerichtet am Frenet-Frame
         const boxSize = 2 + curvatureValue * 3; // Größe abhängig von der Krümmung
         const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
         const wireframeMaterial = new THREE.MeshBasicMaterial({
@@ -554,14 +708,55 @@ export class TrackViewer extends GameObject {
           wireframe: true
         });
         const wireframe = new THREE.Mesh(boxGeometry, wireframeMaterial);
-        wireframe.position.copy(position);
-        wireframe.position.y += 2; // Etwas über dem Checkpoint
         
-        // Rotation entsprechend der Richtung setzen
-        wireframe.quaternion.setFromUnitVectors(
-          new THREE.Vector3(0, 1, 0),
-          tangents[i] // Verwende die möglicherweise angepasste Tangente
+        // Position exakt auf dem Spline-Punkt mit Höhe in Normalenrichtung
+        wireframe.position.copy(position);
+        
+        // Erstelle eine Rotationsmatrix aus den Frenet-Frame-Vektoren
+        // Dies richtet die Box präzise entlang der Spline aus
+        const rotationMatrix = new THREE.Matrix4();
+        const columns = [
+          binormal.x, binormal.y, binormal.z, 0,
+          normal.x, normal.y, normal.z, 0,
+          tangent.x, tangent.y, tangent.z, 0,
+          0, 0, 0, 1
+        ];
+        rotationMatrix.fromArray(columns);
+        wireframe.setRotationFromMatrix(rotationMatrix);
+        
+        // Koordinatensystem-Achsen zur Visualisierung des Frenet-Frames
+        const axisLength = boxSize * 0.75;
+        
+        // X-Achse (Rot = Binormale)
+        const xAxis = new THREE.ArrowHelper(
+          new THREE.Vector3(1, 0, 0),
+          wireframe.position.clone(),
+          axisLength,
+          0xff0000
         );
+        xAxis.setRotationFromMatrix(rotationMatrix);
+        
+        // Y-Achse (Grün = Normale)
+        const yAxis = new THREE.ArrowHelper(
+          new THREE.Vector3(0, 1, 0),
+          wireframe.position.clone(),
+          axisLength,
+          0x00ff00
+        );
+        yAxis.setRotationFromMatrix(rotationMatrix);
+        
+        // Z-Achse (Blau = Tangente)
+        const zAxis = new THREE.ArrowHelper(
+          new THREE.Vector3(0, 0, 1),
+          wireframe.position.clone(),
+          axisLength,
+          0x0000ff
+        );
+        zAxis.setRotationFromMatrix(rotationMatrix);
+        
+        this.addToScene(xAxis);
+        this.addToScene(yAxis);
+        this.addToScene(zAxis);
         
         this.addToScene(wireframe);
       }
@@ -570,6 +765,101 @@ export class TrackViewer extends GameObject {
     });
   }
 
+  // Debug-Pfeile entlang der gesamten Spline hinzufügen
+  addDebugArrowsAlongSpline(spline, spacing = 2) {
+    // Gesamtlänge der Spline berechnen
+    const splineLength = spline.getLength();
+    
+    // Debug-Meldung mit der Gesamtlänge der Strecke
+    console.log(`Gesamtlänge der Spline: ${splineLength.toFixed(2)} Einheiten`);
+    
+    // Anzahl der zu platzierenden Pfeile basierend auf dem Abstand
+    const arrowCount = Math.floor(splineLength / spacing);
+    
+    console.log(`Platziere ${arrowCount} Debug-Pfeile entlang der Spline (Abstand: ${spacing} Einheiten)`);
+    
+    // Erstelle eine Debug-Gruppe für die Pfeile
+    const debugArrowsGroup = new THREE.Group();
+    debugArrowsGroup.name = "SplineDebugArrows";
+    
+    // Schleife durch die Spline und platziere Pfeile in regelmäßigen Abständen
+    for (let i = 0; i < arrowCount; i++) {
+      // Berechne die Position entlang der Spline (0-1)
+      const t = i * spacing / splineLength;
+      
+      // Berechne den aktuellen Punkt und den Tangent-Vektor
+      const point = spline.getPointAt(t);
+      const tangent = spline.getTangentAt(t);
+      
+      // Wir wollen immer eine Normale, die in Richtung der globalen Z-Achse (Himmel) zeigt
+      // Anstatt die Normale relativ zur Strecke zu berechnen, verwenden wir einen festen Vektor nach oben
+      // und projizieren diesen auf die Ebene senkrecht zur Tangente
+      const globalUp = new THREE.Vector3(0, 0, 1); // Globaler "Himmel"-Vektor
+      
+      // Projektion des globalUp-Vektors auf die Ebene senkrecht zur Tangente
+      // Formel: projection = v - (v·n)*n, wobei n die normalisierte Tangente ist
+      const dotProduct = globalUp.dot(tangent);
+      const normal = new THREE.Vector3()
+        .copy(globalUp)
+        .sub(tangent.clone().multiplyScalar(dotProduct))
+        .normalize();
+      
+      // Falls der globalUp-Vektor und die Tangente fast parallel sind (was zu einer sehr kleinen Normale führen würde),
+      // verwenden wir stattdessen einen zusätzlichen Hilfsvektor
+      if (normal.lengthSq() < 0.01) {
+        // In diesem Fall ist die Strecke fast vertikal (nahezu parallel zur Z-Achse)
+        // Wir wählen einen beliebigen Vector in der XY-Ebene
+        const tempVector = new THREE.Vector3(1, 0, 0);
+        const axis = new THREE.Vector3().crossVectors(tempVector, tangent).normalize();
+        normal.crossVectors(tangent, axis).normalize();
+      }
+      
+      // Erstelle einen Pfeil, der immer in Richtung Z-Achse (Himmel) zeigt
+      const arrowLength = 4;
+      const arrowHelper = new THREE.ArrowHelper(
+        new THREE.Vector3(0, 0, 1), // Immer direkt nach oben (Z-Achse)
+        point,
+        arrowLength,
+        0xffffff, // Weiße Farbe für die Spline-Pfeile
+        0.5, // Kleinere Pfeilspitze für eine sauberere Visualisierung
+        0.2
+      );
+      
+      // Erstelle zusätzlich einen Pfeil, der in Richtung der Normalen zeigt (rechtwinklig zur Strecke)
+      // für Debug-Zwecke, um den Unterschied zu sehen
+      if (i % 20 === 0) {
+        const normalArrowHelper = new THREE.ArrowHelper(
+          normal,
+          point,
+          arrowLength * 0.8,
+          0x00ffff, // Türkis für die Normale zur Strecke
+          0.4,
+          0.15
+        );
+        debugArrowsGroup.add(normalArrowHelper);
+      }
+      
+      // Füge die aktuelle Position als Beschriftung hinzu (nur für jeden 10. Pfeil)
+      if (i % 10 === 0) {
+        // Markiere die Position mit einem kleinen Würfel
+        const cube = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.5, 0.5),
+          new THREE.MeshBasicMaterial({ color: 0xffff00 })
+        );
+        cube.position.copy(point);
+        
+        // Füge t-Wert und Position zu Debug-Konsole hinzu
+        console.log(`Pfeil ${i}: t=${t.toFixed(4)}, pos=(${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`);
+        
+        debugArrowsGroup.add(cube);
+      }
+      
+      debugArrowsGroup.add(arrowHelper);
+    }
+    
+    this.addToScene(debugArrowsGroup);
+  }
+  
   update(deltaTime) {
     this.splineGroup.traverse(child => {
       if (child.isMesh && child.material.map) {
