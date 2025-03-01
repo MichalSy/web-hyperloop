@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "3D Hyperloop Track Visualization",
   "scripts": {
-    "start": "webpack serve",
+    "start": "webpack serve --mode development --hot --open",
     "build": "webpack --mode production",
-    "dev": "webpack --mode development",
+    "dev": "webpack --mode development --watch",
     "lint": "eslint src/**/*.js",
     "format": "prettier --write src/**/*.js"
   },

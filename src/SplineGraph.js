@@ -17,6 +17,26 @@ function collides(candidate, points, roadWidth, buffer) {
 }
 
 /**
+ * Prüft auf mögliche Selbstüberschneidungen bei der Kurve
+ */
+function checkSelfIntersection(newPoint, points, minDistance) {
+  // Überprüfe nur Punkte, die nicht direkter Vorgänger oder Nachfolger sind
+  for (let i = 0; i < points.length - 2; i++) {
+    // Ignoriere die letzten beiden Punkte, da sie direkter Vorgänger sind
+    if (i >= points.length - 2) continue;
+    
+    // Berechne den Abstand zwischen dem neuen Punkt und dem existierenden Punkt
+    const distance = newPoint.distanceTo(points[i]);
+    
+    // Wenn der Abstand zu klein ist, gibt es ein Risiko für Überschneidung
+    if (distance < minDistance) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Hilfsfunktion: Rotiert einen Vektor v um einen zufälligen Winkel (±maxAngle) 
  * um eine zufällig ausgewählte Achse, die senkrecht zu v steht.
  * Vermeidet extreme Rotationen, die zu unrealistischen Kurven führen würden.
@@ -72,6 +92,9 @@ function generatePartialPoints(numPoints, maxAngle, biasAngle, minStep, maxStep,
   let direction = globalDirection.clone();
   const maxAttempts = 15; // Erhöhte Versuche für bessere Lösungen
   
+  // Mindestabstand zwischen Checkpoints
+  const minCheckpointDistance = roadWidth * 5;
+  
   for (let i = 1; i < numCheckpoints - 1; i++) {
     let candidate, attempts = 0;
     let newDir;
@@ -107,24 +130,33 @@ function generatePartialPoints(numPoints, maxAngle, biasAngle, minStep, maxStep,
     }
     
     do {
-      // Größere Abstände zwischen Checkpoints für sanftere Kurven
-      const step = THREE.MathUtils.lerp(minStep * 2, maxStep * 2, Math.random());
+      // Vergrößerte und zufälligere Abstände zwischen Checkpoints für mehr Abwechslung
+      // Aber Mindestabstand garantieren
+      const step = Math.max(minCheckpointDistance, 
+                          THREE.MathUtils.lerp(minStep * 3, maxStep * 3, Math.random()));
+      
       candidate = current.clone().add(newDir.clone().multiplyScalar(step));
       attempts++;
       
+      // Erhöhe Sicherheitsabstand zu vorherigen Punkten, um Überschneidungen zu vermeiden
+      const hasCollision = collides(candidate, checkpoints, roadWidth * 3, buffer * 3);
+      const hasSelfIntersection = checkSelfIntersection(candidate, checkpoints, roadWidth * 4);
+      
       // Bei zu vielen Versuchen, passe die Richtung an
-      if (attempts > maxAttempts / 2) {
+      if (attempts > maxAttempts / 2 && (hasCollision || hasSelfIntersection)) {
         // Versuche, mit einer Richtung näher am globalen Trend
         newDir = globalDirection.clone();
         newDir = randomRotate(newDir, adaptedMaxAngle * 0.3, direction);
       }
       
-    } while (collides(candidate, checkpoints, roadWidth * 1.5, buffer * 1.5) && attempts < maxAttempts);
+    } while ((collides(candidate, checkpoints, roadWidth * 3, buffer * 3) || 
+              checkSelfIntersection(candidate, checkpoints, roadWidth * 4)) && 
+             attempts < maxAttempts);
     
     if (attempts >= maxAttempts) {
-      // Fallback: Erzeuge einen Punkt in moderater Entfernung in aktuelle Richtung
-      const safeStep = minStep * 2.5;
-      candidate = current.clone().add(direction.clone().multiplyScalar(safeStep));
+      // Fallback: Erzeuge einen Punkt in einer sicheren Entfernung in Richtung des globalen Trends
+      const safeStep = minCheckpointDistance * 1.5;
+      candidate = current.clone().add(globalDirection.clone().multiplyScalar(safeStep));
     }
     
     current = candidate.clone();
@@ -341,19 +373,19 @@ function createColoredTrackGeometry(curve, segments, roadWidth, thickness, white
     
     // Passe die Streckenbreite basierend auf der Kurvenkrümmung an
     const curvature = curvatures[iFrame];
-    // Höherer Faktor für breitere Strecken in Kurven, bis zu 2x so breit
-    const widthFactor = Math.min(2.0, 1.0 + curvature * 3.0);
+    // Höherer Faktor für breitere Strecken in Kurven, bis zu 2.5x so breit auf der befahrbaren Seite
+    const widthFactor = Math.min(2.5, 1.0 + curvature * 3.5);
     
-    // Asymmetrische Anpassung: Eine Seite (die befahrbare) erhält mehr Platz
+    // Asymmetrische Anpassung: Eine Seite (die befahrbare) erhält deutlich mehr Platz
     let leftAdjustment, rightAdjustment;
     if (befahrbareSeite > 0) {
-      // Rechte Seite ist die befahrbare Seite
-      leftAdjustment = baseHalfW * (1.0 + (widthFactor - 1.0) * 0.3); // Weniger Anpassung auf der linken Seite
-      rightAdjustment = baseHalfW * widthFactor; // Volle Anpassung auf der rechten Seite
+      // Rechte Seite ist die befahrbare Seite - sehr deutlicher Unterschied
+      leftAdjustment = baseHalfW; // Linke Seite bleibt konstant
+      rightAdjustment = baseHalfW * widthFactor; // Rechte Seite wird deutlich breiter in Kurven
     } else {
       // Linke Seite ist die befahrbare Seite
-      leftAdjustment = baseHalfW * widthFactor; // Volle Anpassung auf der linken Seite
-      rightAdjustment = baseHalfW * (1.0 + (widthFactor - 1.0) * 0.3); // Weniger Anpassung auf der rechten Seite
+      leftAdjustment = baseHalfW * widthFactor; // Linke Seite wird deutlich breiter in Kurven
+      rightAdjustment = baseHalfW; // Rechte Seite bleibt konstant
     }
   
     const dist = distArray[iFrame] || 0;
@@ -367,7 +399,7 @@ function createColoredTrackGeometry(curve, segments, roadWidth, thickness, white
     const TR = center.clone().addScaledVector(normal, rightAdjustment);
     
     // Innere Punkte für die Seitenwände (etwas nach außen versetzt)
-    const sideOffset = 0.5; // Abstand zwischen Fahrbahn und Seitenwand
+    const sideOffset = 1.0; // Deutlicherer Abstand zwischen Fahrbahn und Seitenwand
     
     // Seitenwände links
     const WTL = TL.clone().addScaledVector(normal, -sideOffset); // Oberkante Seitenwand links
@@ -443,14 +475,77 @@ function createColoredTrackGeometry(curve, segments, roadWidth, thickness, white
 }
 
 /**
- * Debug: Erzeugt für jeden Punkt im Array eine kleine Kugel und fügt sie der Szene hinzu.
+ * Debug: Erzeugt für jeden Checkpoint eine gut sichtbare Kugel und fügt sie der Szene hinzu.
+ * Die Kugeln werden 5 Einheiten über der Strecke platziert, um als Checkpoint-Marker zu dienen.
+ * Die befahrbare Seite wird durch spezielle Markierungen gekennzeichnet.
  */
 function createDebugSpheres(scene, points, color = 0xff0000) {
-  const sphereGeom = new THREE.SphereGeometry(0.5, 8, 8);
+  // Größere Kugel für bessere Sichtbarkeit der Checkpoints
+  const sphereGeom = new THREE.SphereGeometry(4, 16, 16);
   const sphereMat = new THREE.MeshBasicMaterial({ color });
+  
+  // Nur ausgewählte Punkte als Checkpoint markieren
+  // Dies stellt sicher, dass die Checkpoints ausreichend Abstand haben
+  const checkpointInterval = Math.max(10, Math.floor(points.length / 12));
+  
+  // Definiere, welche Seite die befahrbare Seite ist
+  const befahrbareSeite = 1; // 1 = rechts, -1 = links
+  
+  // Finde das Zentrum des Kurses für die Berechnung der normalen Vektoren
+  const center = new THREE.Vector3();
   for (let i = 0; i < points.length; i++) {
-    const sphere = new THREE.Mesh(sphereGeom, sphereMat);
-    sphere.position.copy(points[i]);
+    center.add(points[i]);
+  }
+  center.divideScalar(points.length);
+  
+  for (let i = 0; i < points.length; i += checkpointInterval) {
+    // Position über der Strecke
+    const position = points[i].clone();
+    position.y += 5; // 5 Einheiten über der Strecke
+    
+    // Berechne Marker für die befahrbare Seite
+    if (i % (checkpointInterval * 3) === 0) { // Nur bei jedem dritten Checkpoint
+      // Berechne Tangente und Normale für die Position des Seitenmarkers
+      const nextIdx = (i + 1) % points.length;
+      const tangent = new THREE.Vector3().subVectors(points[nextIdx], points[i]).normalize();
+      
+      // Berechne die normale Richtung zum Zentrum
+      const toCenter = new THREE.Vector3().subVectors(center, points[i]).normalize();
+      
+      // Berechne die Normale zur Tangente in der horizontalen Ebene
+      const normal = new THREE.Vector3().crossVectors(tangent, new THREE.Vector3(0, 1, 0)).normalize();
+      
+      // Stelle sicher, dass die Normale in die richtige Richtung zeigt (vom Zentrum weg)
+      if (normal.dot(toCenter) > 0) {
+        normal.negate();
+      }
+      
+      // Positioniere den Seitenmarker auf der befahrbaren Seite
+      const sideMarkerPos = points[i].clone().addScaledVector(normal, befahrbareSeite * 15).addScaledVector(new THREE.Vector3(0, 1, 0), 2);
+      
+      // Erstelle einen auffälligen Marker für die befahrbare Seite
+      const sideMarkerGeo = new THREE.BoxGeometry(3, 10, 3);
+      const sideMarkerMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
+      const sideMarker = new THREE.Mesh(sideMarkerGeo, sideMarkerMat);
+      sideMarker.position.copy(sideMarkerPos);
+      scene.add(sideMarker);
+    }
+    
+    // Erstelle den Checkpoint selbst
+    let checkpointMat;
+    if (i === 0) {
+      // Startpunkt mit spezieller Farbe
+      checkpointMat = new THREE.MeshBasicMaterial({ color: 0xffff00 });
+    } else if (i >= points.length - checkpointInterval) {
+      // Endpunkt/Übergang mit anderer spezieller Farbe
+      checkpointMat = new THREE.MeshBasicMaterial({ color: 0xff00ff });
+    } else {
+      // Normale Checkpoints
+      checkpointMat = new THREE.MeshBasicMaterial({ color });
+    }
+    
+    const sphere = new THREE.Mesh(sphereGeom, checkpointMat);
+    sphere.position.copy(position);
     scene.add(sphere);
   }
 }
@@ -464,11 +559,58 @@ function createTrackGeometry(curve, segments, roadWidth, thickness) {
 
 /**
  * Überprüft die Kurve auf Probleme wie starke Wendungen, die zu Selbstüberschneidungen führen könnten.
+ * Zusätzlich wird geprüft, ob die Kurve irgendwo in die falsche Richtung rotiert.
  * Gibt true zurück, wenn die Kurve in Ordnung ist, sonst false.
  */
 function validateCurve(curve, segments) {
   const points = curve.getSpacedPoints(segments);
   const threshold = Math.PI * 0.75; // ~135 Grad
+  
+  // Berechne die Drehrichtung der Kurve insgesamt
+  let totalRotation = 0;
+  const center = new THREE.Vector3(0, 0, 0);
+  
+  // 1. Berechne ungefähres Zentrum der Kurve
+  for (let i = 0; i < points.length; i++) {
+    center.add(points[i]);
+  }
+  center.divideScalar(points.length);
+  
+  // 2. Prüfe, ob die Kurve konsistent in eine Richtung dreht
+  let prevAngle = null;
+  let clockwiseRotations = 0;
+  let counterclockwiseRotations = 0;
+  
+  for (let i = 0; i < points.length; i++) {
+    const pointCentered = points[i].clone().sub(center);
+    const angle = Math.atan2(pointCentered.z, pointCentered.x);
+    
+    if (prevAngle !== null) {
+      // Berechne Winkeländerung und normalisiere auf [-π, π]
+      let deltaAngle = angle - prevAngle;
+      if (deltaAngle > Math.PI) deltaAngle -= Math.PI * 2;
+      if (deltaAngle < -Math.PI) deltaAngle += Math.PI * 2;
+      
+      // Zähle Rotationen in jede Richtung
+      if (deltaAngle > 0) counterclockwiseRotations++;
+      else if (deltaAngle < 0) clockwiseRotations++;
+      
+      totalRotation += deltaAngle;
+    }
+    prevAngle = angle;
+  }
+  
+  // Wenn die Kurve stark in unterschiedliche Richtungen rotiert, ist sie problematisch
+  if (clockwiseRotations > 0 && counterclockwiseRotations > 0) {
+    const totalPoints = clockwiseRotations + counterclockwiseRotations;
+    const minorDirection = Math.min(clockwiseRotations, counterclockwiseRotations);
+    
+    // Wenn mehr als 25% der Rotationen in die falsche Richtung gehen, lehne die Kurve ab
+    if (minorDirection / totalPoints > 0.20) {
+      console.warn('Kurve rotiert stark in unterschiedliche Richtungen');
+      return false;
+    }
+  }
   
   // Prüfe auf zu scharfe Winkel zwischen aufeinanderfolgenden Punkten
   for (let i = 1; i < points.length - 1; i++) {
@@ -479,6 +621,20 @@ function validateCurve(curve, segments) {
     if (angle > threshold) {
       console.warn('Zu scharfe Kurve erkannt bei Punkt', i);
       return false;
+    }
+  }
+  
+  // Prüfe auf potenzielle Selbstüberschneidungen - Streckenteile dürfen sich nicht zu nahe kommen
+  const minSegmentDistance = 20; // Mindestabstand zwischen nicht benachbarten Segmenten
+  for (let i = 0; i < points.length; i++) {
+    for (let j = i + 3; j < points.length; j++) { // Überspringe direkte Nachbarn (+3)
+      if (j === i || j === (i+1) % points.length || j === (i+2) % points.length) continue;
+      
+      const dist = points[i].distanceTo(points[j]);
+      if (dist < minSegmentDistance) {
+        console.warn('Mögliche Streckenüberschneidung erkannt zwischen Punkten', i, 'und', j);
+        return false;
+      }
     }
   }
   
@@ -494,28 +650,164 @@ export class SplineGraph extends GameObject {
   }
   
   /**
-   * Erzeugt einen geschlossenen Pfad.
-   * Es wird mit festen Punkten begonnen: p1 = (5,0,0) und pN = (-5,0,0).
-   * Der Pfad zwischen p1 und pN wird zufällig generiert, dann wird pN -> p1 als Gerade hinzugefügt.
+   * Erzeugt einen geschlossenen Pfad mit einer optimierten Verbindung zwischen
+   * dem letzten und ersten Checkpoint für realistische Übergänge.
+   * Die Drehrichtung wird optimiert, um immer den kürzesten Weg zu wählen.
    */
   createClosedCurve(numPoints = 30) {
     let attempts = 0;
     let curve;
     
     do {
-      // Feste Punkte:
-      const pStart = new THREE.Vector3(500, 0, 0);
-      const pEnd   = new THREE.Vector3(-500, 0, 0);
+      // Erzeuge Punkte für eine ovale Grundform
+      const rawPoints = [];
       
-      // Generiere Punkte für ein Oval als Ausgangsbasis - verbesserte Methode
-      const rawPoints = generatePartialPoints(numPoints);
+      // Der letzte Punkt wird sauber mit dem ersten verbunden
+      const radius = 500;
+      const verticalRadius = radius * 0.8;
       
-      // Füge zusätzliche Glättung hinzu - stärker als vorher
+      // Generiere Punkte auf einem Oval, aber reserviere die letzten Punkte für den Übergang
+      const reservedPoints = 5; // Anzahl der Punkte, die für den sauberen Übergang reserviert sind
+      const basePoints = numPoints - reservedPoints;
+      
+      // Wähle eine konsistente Drehrichtung für die Kurve (hier: im Uhrzeigersinn)
+      const clockwise = true;
+      const angleMultiplier = clockwise ? -1 : 1;
+      
+      // Erstelle die Hauptpunkte der Strecke
+      for (let i = 0; i < basePoints; i++) {
+        // In einer konsistenten Richtung generieren - 75% des Kreises für die Hauptstrecke
+        // Niemals mehr als 75% des Kreises verwenden, um extreme Rotationen zu vermeiden
+        const angle = angleMultiplier * (i / basePoints) * (Math.PI * 2 * 0.75); 
+        
+        // Erzeuge einen Punkt auf einem leicht ovalen Kreis
+        const x = Math.cos(angle) * radius;
+        const z = Math.sin(angle) * verticalRadius;
+        
+        // Kleine Variation in der Höhe (y-Achse) für Hügel/Täler
+        const heightVariation = 20;
+        const y = Math.sin(angle * 3) * heightVariation;
+        
+        // Kontrollierte Störung für natürlicheres Aussehen - reduziert für berechenbarere Pfade
+        const noiseScale = 20;
+        const noise = new THREE.Vector3(
+          (Math.sin(angle * 2.1) + Math.cos(angle * 3.7)) * noiseScale,
+          0,
+          (Math.sin(angle * 3.3) + Math.cos(angle * 2.3)) * noiseScale
+        );
+        
+        const point = new THREE.Vector3(x, y, z).add(noise);
+        rawPoints.push(point);
+      }
+      
+      // Füge spezielle Übergangspunkte hinzu, die einen glatten Übergang zurück zum Anfang ermöglichen
+      const firstPoint = rawPoints[0];
+      const lastPoint = rawPoints[rawPoints.length - 1];
+      
+      // Bestimme die Richtung des ersten Punkts (vom ersten zum zweiten)
+      const firstDir = new THREE.Vector3().subVectors(rawPoints[1], firstPoint).normalize();
+      
+      // Bestimme die Richtung, in die der letzte Punkt zeigt
+      const lastDir = new THREE.Vector3().subVectors(lastPoint, rawPoints[rawPoints.length - 2]).normalize();
+      
+      // Bestimme den optimalen Weg zurück zum Start durch Vergleich der Winkel
+      // Zunächst berechne die direkte Verbindung zum ersten Punkt
+      const directToStart = new THREE.Vector3().subVectors(firstPoint, lastPoint).normalize();
+      
+      // Berechne die beiden möglichen Zielrichtungen für den Übergang
+      const targetDir1 = firstDir.clone().negate(); // Entgegengesetzt zur Richtung des ersten Punkts
+      const targetDir2 = firstDir.clone(); // Gleiche Richtung wie der erste Punkt
+      
+      // Berechne die Winkel zwischen der letzten Richtung und den beiden möglichen Zielrichtungen
+      const angle1 = lastDir.angleTo(targetDir1);
+      const angle2 = lastDir.angleTo(targetDir2);
+      
+      // Wähle die Richtung mit dem kleineren Winkel, um kleinere Rotationen zu bevorzugen
+      const targetDir = angle1 <= angle2 ? targetDir1 : targetDir2;
+      
+      // Berechne wie abrupt die Drehung sein wird und passe die Anzahl der Übergangspunkte an
+      const transitionAngle = lastDir.angleTo(targetDir);
+      // Mehr Punkte für scharfe Übergänge
+      const dynamicReservedPoints = Math.max(
+        reservedPoints, 
+        Math.ceil(reservedPoints * transitionAngle / (Math.PI * 0.5))
+      );
+      
+      // Erzeuge Punkte, die eine sanfte Kurve vom letzten Hauptpunkt zurück zum ersten erzeugen
+      const approachDistance = lastPoint.distanceTo(firstPoint);
+      const transitionStepSize = approachDistance / (dynamicReservedPoints + 1);
+      
+      // Füge Zwischenpunkte für einen sanften Übergang hinzu
+      const transitionPoints = [];
+      for (let i = 0; i < dynamicReservedPoints - 1; i++) {
+        const t = (i + 1) / (dynamicReservedPoints);
+        
+        // Progressive Interpolation: Am Anfang mehr vom lastDir, am Ende mehr vom targetDir
+        // Verwende eine Potenzfunktion für ein natürlicheres Timing des Übergangs
+        const power = transitionAngle > Math.PI * 0.4 ? 0.5 : 0.7; // Flachere Kurve für scharfe Übergänge
+        const blendFactor = Math.pow(t, power);
+        
+        // Interpoliere zwischen der Richtung des letzten Punktes und der Zielrichtung
+        const blendDir = lastDir.clone().lerp(targetDir, blendFactor).normalize();
+        
+        // Positioniere den Punkt entlang dieser interpolierten Richtung
+        const interpolatedPoint = lastPoint.clone().add(
+          blendDir.clone().multiplyScalar(transitionStepSize * (i + 1))
+        );
+        
+        // Y-Wert sanft angleichen
+        interpolatedPoint.y = THREE.MathUtils.lerp(lastPoint.y, firstPoint.y, t);
+        
+        transitionPoints.push(interpolatedPoint);
+      }
+      
+      // Prüfe, ob die Übergangspunkte in die falsche Richtung gehen (zu stark rotieren)
+      let needsReversal = false;
+      if (transitionPoints.length > 2) {
+        const midIdx = Math.floor(transitionPoints.length / 2);
+        const midPoint = transitionPoints[midIdx];
+        const straightLineMid = new THREE.Vector3().lerpVectors(lastPoint, firstPoint, 0.5);
+        
+        // Wenn der Mittelpunkt zu weit von der direkten Linie entfernt ist, könnte der Weg zu umständlich sein
+        if (midPoint.distanceTo(straightLineMid) > approachDistance * 0.6) {
+          needsReversal = true;
+        }
+      }
+      
+      // Bei Bedarf die Übergangsrichtung umkehren
+      if (needsReversal) {
+        transitionPoints.length = 0; // Leere das Array
+        
+        // Erstelle einen direkteren Weg mit weniger Punkten
+        const simplifiedPoints = 3;
+        for (let i = 0; i < simplifiedPoints; i++) {
+          const t = (i + 1) / (simplifiedPoints + 1);
+          // Interpoliere direkt zwischen den Punkten mit leichter Anhebung in der Mitte
+          const interpolatedPoint = new THREE.Vector3().lerpVectors(lastPoint, firstPoint, t);
+          
+          // Leichte Wölbung in der Mitte für natürlicheres Aussehen
+          const midBump = Math.sin(t * Math.PI) * 20;
+          interpolatedPoint.y += midBump;
+          
+          transitionPoints.push(interpolatedPoint);
+        }
+      }
+      
+      // Füge alle Übergangspunkte zum Hauptpfad hinzu
+      transitionPoints.forEach(point => rawPoints.push(point));
+      
+      // Füge den Anfangspunkt am Ende hinzu, um den Kreis zu schließen
+      rawPoints.push(firstPoint.clone());
+      
+      // Anwenden von stärkerer Glättung für extra sanfte Kurven
       const smoothPts = smoothPoints(rawPoints, 5, 3);
       
       curve = new THREE.CatmullRomCurve3(smoothPts, true, 'centripetal');
       attempts++;
-    } while (!validateCurve(curve, 100) && attempts < 10); // Maximal 10 Versuche, um eine gültige Kurve zu generieren
+      
+      // Validiere, dass die erzeugte Kurve keine zu starken Winkel aufweist
+      // und konsistent in eine Richtung rotiert
+    } while (!validateCurve(curve, 100) && attempts < 10);
     
     if (attempts >= 10) {
       console.warn('Konnte keine perfekte Kurve generieren, verwende beste Annäherung');
@@ -592,45 +884,4 @@ export class SplineGraph extends GameObject {
   update(deltaTime) {
     // Per-frame updates, falls nötig
   }
-}
-
-/**
- * Generiert Kontrollpunkte für die Strecke mit realistischen Rotationen
- * zwischen Wegpunkten, die als Checkpoints für spezielle Streckenbereiche
- * (z.B. Tunnel, Jumps) dienen können.
- */
-function generatePointsBetween(pStart, pEnd, numPoints, maxAngle, biasAngle, minStep, maxStep, roadWidth, buffer) {
-  const points = [];
-  
-  // Hilfsvektor, um Rotationen um die y-Achse zu beschränken
-  const worldUp = new THREE.Vector3(0, 1, 0);
-  
-  // Erzeuge eine ovale Grundform als Basis
-  const radius = 500;
-  const verticalRadius = radius * 0.8;  // Leicht ovale Form
-  
-  for (let i = 0; i < numPoints; i++) {
-    const angle = (i / numPoints) * Math.PI * 2;
-    
-    // Erzeuge einen Punkt auf einem Oval
-    const x = Math.cos(angle) * radius;
-    const z = Math.sin(angle) * verticalRadius;
-    
-    // Kleine Variation in der Höhe (y-Achse) für Hügel/Täler - sehr moderat
-    const heightVariation = 20;
-    const y = (Math.sin(angle * 3) * heightVariation) * (1 - Math.abs(Math.sin(angle))); // Flacher am Start/Ende
-    
-    // Füge zusätzliche Störung für natürlichere Form hinzu - sehr kontrolliert
-    const noiseScale = 30;
-    const noise = new THREE.Vector3(
-      (Math.sin(angle * 2.1) + Math.cos(angle * 3.7)) * noiseScale,
-      0,
-      (Math.sin(angle * 3.3) + Math.cos(angle * 2.3)) * noiseScale
-    );
-    
-    const point = new THREE.Vector3(x, y, z).add(noise);
-    points.push(point);
-  }
-  
-  return points;
 }

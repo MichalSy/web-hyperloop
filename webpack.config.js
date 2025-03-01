@@ -8,7 +8,7 @@ module.exports = {
   output: {
     filename: 'bundle.js',
     path: path.resolve(__dirname, 'dist'),
-    publicPath: './'
+    publicPath: '/'
   },
   resolve: {
     extensions: ['.js'],
@@ -45,8 +45,17 @@ module.exports = {
     static: {
       directory: path.join(__dirname, 'dist'),
     },
+    historyApiFallback: true,
     compress: true,
     port: 9000,
     hot: true,
+    open: true,
+    watchFiles: ['src/**/*'],
+    liveReload: true,
   },
+  watchOptions: {
+    poll: 1000, // Check for changes every second
+    ignored: /node_modules/,
+  },
+  devtool: 'eval-source-map', // Better source maps for development
 };
