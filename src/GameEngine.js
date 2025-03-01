@@ -1,5 +1,5 @@
-import * as THREE from 'three';
-import { GameObjectManager } from './GameObjectManager.js';
+import * as THREE from "three";
+import { GameObjectManager } from "./GameObjectManager.js";
 
 class GameEngine {
   static #instance = null;
@@ -13,7 +13,9 @@ class GameEngine {
 
   constructor() {
     if (GameEngine.#instance) {
-      throw new Error('GameEngine is a singleton. Use GameEngine.getInstance() instead.');
+      throw new Error(
+        "GameEngine is a singleton. Use GameEngine.getInstance() instead.",
+      );
     }
 
     this.scene = new THREE.Scene();
@@ -43,7 +45,7 @@ class GameEngine {
   }
 
   update(deltaTime) {
-    if (this.gameObjectManager === null)  {
+    if (this.gameObjectManager === null) {
       this.gameObjectManager = GameObjectManager.getInstance();
     }
     this.gameObjectManager.update(deltaTime);

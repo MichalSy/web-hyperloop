@@ -30,5 +30,4 @@
 - GameObject: Base class for all scene objects
 - GameObjectManager: Manages game object lifecycle
 - Player: Handles camera and user input
-- SplineGraph: Generates 3D tracks with spline math
 - TrackViewer: Renders and manages track visualization

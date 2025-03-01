@@ -1,7 +1,6 @@
 // ui.js
-import { GameObject } from './GameObject.js';
-import { GameObjectManager } from './GameObjectManager.js';
-import { SplineGraph } from './SplineGraph.js';
+import { GameObject } from "./GameObject.js";
+import { GameObjectManager } from "./GameObjectManager.js";
 
 export class UI extends GameObject {
   constructor() {
@@ -17,9 +16,9 @@ export class UI extends GameObject {
     this.resetView = this.resetView.bind(this);
 
     // Create a container for the UI
-    this.container = document.createElement('div');
-    this.container.id = 'ui-container';
-    this.container.classList.add('ui-container');
+    this.container = document.createElement("div");
+    this.container.id = "ui-container";
+    this.container.classList.add("ui-container");
 
     // Set the inner HTML for UI controls
     this.container.innerHTML = `
@@ -40,58 +39,62 @@ export class UI extends GameObject {
     document.body.appendChild(this.container);
 
     // Setup event listeners for UI controls
-    this.container.querySelector('#numPoints').addEventListener('input', (e) => {
-      const newValue = Number(e.target.value);
-      this.numPoints = newValue;
-      this.onUIUpdate({ numPoints: newValue });
-      this.container.querySelector('#numPointsValue').textContent = newValue;
-    });
+    this.container
+      .querySelector("#numPoints")
+      .addEventListener("input", (e) => {
+        const newValue = Number(e.target.value);
+        this.numPoints = newValue;
+        this.onUIUpdate({ numPoints: newValue });
+        this.container.querySelector("#numPointsValue").textContent = newValue;
+      });
 
-    this.container.querySelector('#distanceStep').addEventListener('input', (e) => {
-      const newValue = Number(e.target.value);
-      this.distanceStep = newValue;
-      this.onUIUpdate({ distanceStep: newValue });
-      this.container.querySelector('#distanceStepValue').textContent = newValue;
-    });
+    this.container
+      .querySelector("#distanceStep")
+      .addEventListener("input", (e) => {
+        const newValue = Number(e.target.value);
+        this.distanceStep = newValue;
+        this.onUIUpdate({ distanceStep: newValue });
+        this.container.querySelector("#distanceStepValue").textContent =
+          newValue;
+      });
 
-    this.container.querySelector('#maxAngle').addEventListener('input', (e) => {
+    this.container.querySelector("#maxAngle").addEventListener("input", (e) => {
       const newValue = Number(e.target.value);
       this.maxAngle = newValue;
       this.onUIUpdate({ maxAngle: newValue });
-      this.container.querySelector('#maxAngleValue').textContent = newValue;
+      this.container.querySelector("#maxAngleValue").textContent = newValue;
     });
 
-    this.container.querySelector('#seedString').addEventListener('input', (e) => {
-      const newValue = e.target.value;
-      this.seedString = newValue;
-      this.onSeedChange(newValue);
-    });
+    this.container
+      .querySelector("#seedString")
+      .addEventListener("input", (e) => {
+        const newValue = e.target.value;
+        this.seedString = newValue;
+        this.onSeedChange(newValue);
+      });
 
-    this.container.querySelector('#resetView').addEventListener('click', () => {
+    this.container.querySelector("#resetView").addEventListener("click", () => {
       this.resetView();
     });
   }
 
   onUIUpdate(changedParams) {
     const gameObjectManager = GameObjectManager.getInstance();
-    const splineGraph = gameObjectManager.getObjectByType(SplineGraph);
-    if (changedParams.numPoints !== undefined) this.numPoints = changedParams.numPoints;
-    if (changedParams.distanceStep !== undefined) this.distanceStep = changedParams.distanceStep;
-    if (changedParams.maxAngle !== undefined) this.maxAngle = changedParams.maxAngle;
-    splineGraph.updateSpline(this.numPoints, this.maxAngle, this.distanceStep, this.seedString);
+    if (changedParams.numPoints !== undefined)
+      this.numPoints = changedParams.numPoints;
+    if (changedParams.distanceStep !== undefined)
+      this.distanceStep = changedParams.distanceStep;
+    if (changedParams.maxAngle !== undefined)
+      this.maxAngle = changedParams.maxAngle;
   }
 
   onSeedChange(newSeed) {
     const gameObjectManager = GameObjectManager.getInstance();
-    const splineGraph = gameObjectManager.getObjectByType(SplineGraph);
     this.seedString = newSeed;
-    splineGraph.updateSpline(this.numPoints, this.maxAngle, this.distanceStep, this.seedString);
   }
 
   resetView() {
     const gameObjectManager = GameObjectManager.getInstance();
-    const splineGraph = gameObjectManager.getObjectByType(SplineGraph);
-    splineGraph.adjustCameraToFitSpline(splineGraph.splineGroup);
   }
 
   update(deltaTime) {

@@ -15,7 +15,9 @@ export class GameObjectManager {
 
   constructor() {
     if (GameObjectManager.#instance) {
-      throw new Error('GameObjectManager is a singleton. Use GameObjectManager.getInstance() instead.');
+      throw new Error(
+        "GameObjectManager is a singleton. Use GameObjectManager.getInstance() instead.",
+      );
     }
     this.gameObjects = [];
   }
@@ -32,8 +34,8 @@ export class GameObjectManager {
   }
 
   update(deltaTime) {
-    this.gameObjects.forEach(object => {
-      if (typeof object.update === 'function') {
+    this.gameObjects.forEach((object) => {
+      if (typeof object.update === "function") {
         object.update(deltaTime);
       }
     });
@@ -45,7 +47,7 @@ export class GameObjectManager {
    * @returns {Object|null} The first instance of the specified type, or null if none found
    */
   getObjectByType(type) {
-    return this.gameObjects.find(obj => obj instanceof type) || null;
+    return this.gameObjects.find((obj) => obj instanceof type) || null;
   }
 
   /**
@@ -54,6 +56,6 @@ export class GameObjectManager {
    * @returns {Array} Array of all instances of the specified type
    */
   getObjectsByType(type) {
-    return this.gameObjects.filter(obj => obj instanceof type);
+    return this.gameObjects.filter((obj) => obj instanceof type);
   }
 }

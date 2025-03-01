@@ -1,13 +1,21 @@
 // Player.js
-import * as THREE from 'three';
-import { GameObject } from './GameObject.js';
-import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
+import * as THREE from "three";
+import { GameObject } from "./GameObject.js";
+import { PointerLockControls } from "three/examples/jsm/controls/PointerLockControls.js";
 
 export class Player extends GameObject {
   constructor(moveSpeed = 100) {
     super();
-    this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.1, 1500);
-    this.controls = new PointerLockControls(this.camera, this.renderer.domElement);
+    this.camera = new THREE.PerspectiveCamera(
+      90,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1500,
+    );
+    this.controls = new PointerLockControls(
+      this.camera,
+      this.renderer.domElement,
+    );
     this.controls.getObject().position.set(0, 200, 600);
     this.moveSpeed = moveSpeed;
     this.domElement = this.renderer.domElement;
@@ -19,7 +27,7 @@ export class Player extends GameObject {
     this.mouseButtons = {
       left: false,
       middle: false,
-      right: false
+      right: false,
     };
 
     // Event-Handler als Arrow-Funktionen, damit 'this' korrekt gebunden ist
@@ -41,7 +49,6 @@ export class Player extends GameObject {
       }
     };
 
-
     this.mouseUpHandler = (e) => {
       if (e.button === 0) {
         this.mouseButtons.left = false;
@@ -61,19 +68,21 @@ export class Player extends GameObject {
     };
     this.contextMenuHandler = (e) => {
       e.preventDefault();
-      document.querySelectorAll('input').forEach(input => input.blur());
+      document.querySelectorAll("input").forEach((input) => input.blur());
     };
     this.windowResizeHandler = () => this.onWindowResize();
 
     // Registriere die Event Listener global
-    this.domElement.addEventListener('mousedown', this.mouseDownHandler);
-    this.domElement.addEventListener('mouseup', this.mouseUpHandler);
-    this.domElement.addEventListener('mousemove', this.mouseMoveHandler);
-    this.domElement.addEventListener('wheel', this.wheelHandler, { passive: false });
-    window.addEventListener('keydown', this.keyDownHandler);
-    window.addEventListener('keyup', this.keyUpHandler);
-    window.addEventListener('contextmenu', this.contextMenuHandler);
-    window.addEventListener('resize', this.windowResizeHandler, false);
+    this.domElement.addEventListener("mousedown", this.mouseDownHandler);
+    this.domElement.addEventListener("mouseup", this.mouseUpHandler);
+    this.domElement.addEventListener("mousemove", this.mouseMoveHandler);
+    this.domElement.addEventListener("wheel", this.wheelHandler, {
+      passive: false,
+    });
+    window.addEventListener("keydown", this.keyDownHandler);
+    window.addEventListener("keyup", this.keyUpHandler);
+    window.addEventListener("contextmenu", this.contextMenuHandler);
+    window.addEventListener("resize", this.windowResizeHandler, false);
 
     // Zusätzliche Variablen für das Draggen der Spline-Route
     this.raycaster = new THREE.Raycaster();
@@ -93,29 +102,39 @@ export class Player extends GameObject {
       horizontalForward.y = 0;
       horizontalForward.normalize();
       const up = new THREE.Vector3(0, 1, 0);
-      const right = new THREE.Vector3().crossVectors(horizontalForward, up).normalize();
+      const right = new THREE.Vector3()
+        .crossVectors(horizontalForward, up)
+        .normalize();
 
-      if (this.keys['KeyW']) {
-        this.controls.getObject().position.addScaledVector(forward, this.moveSpeed * deltaTime);
+      if (this.keys["KeyW"]) {
+        this.controls
+          .getObject()
+          .position.addScaledVector(forward, this.moveSpeed * deltaTime);
       }
-      if (this.keys['KeyS']) {
-        this.controls.getObject().position.addScaledVector(forward, -this.moveSpeed * deltaTime);
+      if (this.keys["KeyS"]) {
+        this.controls
+          .getObject()
+          .position.addScaledVector(forward, -this.moveSpeed * deltaTime);
       }
-      if (this.keys['KeyA']) {
-        this.controls.getObject().position.addScaledVector(right, -this.moveSpeed * deltaTime);
+      if (this.keys["KeyA"]) {
+        this.controls
+          .getObject()
+          .position.addScaledVector(right, -this.moveSpeed * deltaTime);
       }
-      if (this.keys['KeyD']) {
-        this.controls.getObject().position.addScaledVector(right, this.moveSpeed * deltaTime);
+      if (this.keys["KeyD"]) {
+        this.controls
+          .getObject()
+          .position.addScaledVector(right, this.moveSpeed * deltaTime);
       }
-      
+
       // Beispielhafte Verwendung der Maussteuerung
       if (this.mouseButtons.right) {
         // Logik für Rechtsklick (z. B. alternative Blickrichtung oder Aktion)
-        console.log('Rechter Mausklick aktiv');
+        console.log("Rechter Mausklick aktiv");
       }
       if (this.mouseButtons.middle) {
         // Logik für Mittelklick (z. B. Wechsel der Kameraperspektive)
-        console.log('Mittlerer Mausklick aktiv');
+        console.log("Mittlerer Mausklick aktiv");
       }
       if (this.mouseButtons.left) {
         // Logik für Linksklick (falls benötigt, z. B. interaktive Aktionen)
@@ -130,20 +149,26 @@ export class Player extends GameObject {
     const moveFactor = 0.5;
     const forward = new THREE.Vector3();
     this.camera.getWorldDirection(forward);
-    this.controls.getObject().position.addScaledVector(forward, -e.deltaY * moveFactor);
+    this.controls
+      .getObject()
+      .position.addScaledVector(forward, -e.deltaY * moveFactor);
   }
 
   onMiddleMouseDown(e) {
-    if (e.button === 1 && this.splineGroup) { // Mittlere Maustaste
+    if (e.button === 1 && this.splineGroup) {
+      // Mittlere Maustaste
       this.isDraggingRoute = true;
       const mouse = new THREE.Vector2(
         (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
+        -(e.clientY / window.innerHeight) * 2 + 1,
       );
       this.raycaster.setFromCamera(mouse, this.camera);
       const camDir = new THREE.Vector3();
       this.camera.getWorldDirection(camDir);
-      this.dragPlane.setFromNormalAndCoplanarPoint(camDir, this.splineGroup.position);
+      this.dragPlane.setFromNormalAndCoplanarPoint(
+        camDir,
+        this.splineGroup.position,
+      );
       this.raycaster.ray.intersectPlane(this.dragPlane, this.dragStartPoint);
       this.routeInitialPosition.copy(this.splineGroup.position);
       e.preventDefault();
@@ -154,14 +179,19 @@ export class Player extends GameObject {
     if (this.isDraggingRoute && this.splineGroup) {
       const mouse = new THREE.Vector2(
         (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
+        -(e.clientY / window.innerHeight) * 2 + 1,
       );
       this.raycaster.setFromCamera(mouse, this.camera);
       const newIntersection = new THREE.Vector3();
       this.raycaster.ray.intersectPlane(this.dragPlane, newIntersection);
       if (newIntersection) {
-        const delta = new THREE.Vector3().subVectors(newIntersection, this.dragStartPoint);
-        this.splineGroup.position.copy(this.routeInitialPosition.clone().add(delta));
+        const delta = new THREE.Vector3().subVectors(
+          newIntersection,
+          this.dragStartPoint,
+        );
+        this.splineGroup.position.copy(
+          this.routeInitialPosition.clone().add(delta),
+        );
       }
       e.preventDefault();
     }
@@ -175,10 +205,11 @@ export class Player extends GameObject {
   }
 
   onRightMouseDown(e) {
-    if (e.button === 2) { // Rechte Maustaste
+    if (e.button === 2) {
+      // Rechte Maustaste
       this.controls.lock();
       e.preventDefault();
-      document.querySelectorAll('input').forEach(input => input.blur());
+      document.querySelectorAll("input").forEach((input) => input.blur());
     }
   }
 
@@ -222,14 +253,14 @@ export class Player extends GameObject {
 
   // Optionale Methode zum Entfernen der Event Listener, falls der Player zerstört wird
   dispose() {
-    this.domElement.removeEventListener('mousedown', this.mouseDownHandler);
-    this.domElement.removeEventListener('mouseup', this.mouseUpHandler);
-    this.domElement.removeEventListener('mousemove', this.mouseMoveHandler);
-    this.domElement.removeEventListener('wheel', this.wheelHandler);
-    window.removeEventListener('keydown', this.keyDownHandler);
-    window.removeEventListener('keyup', this.keyUpHandler);
-    window.removeEventListener('contextmenu', this.contextMenuHandler);
-    window.removeEventListener('resize', this.windowResizeHandler);
+    this.domElement.removeEventListener("mousedown", this.mouseDownHandler);
+    this.domElement.removeEventListener("mouseup", this.mouseUpHandler);
+    this.domElement.removeEventListener("mousemove", this.mouseMoveHandler);
+    this.domElement.removeEventListener("wheel", this.wheelHandler);
+    window.removeEventListener("keydown", this.keyDownHandler);
+    window.removeEventListener("keyup", this.keyUpHandler);
+    window.removeEventListener("contextmenu", this.contextMenuHandler);
+    window.removeEventListener("resize", this.windowResizeHandler);
   }
 
   setInputSplineGroup(group) {

@@ -1,6 +1,6 @@
 // GameObject.js
-import GameEngine from './GameEngine.js';
-import { GameObjectManager } from './GameObjectManager.js';
+import GameEngine from "./GameEngine.js";
+import { GameObjectManager } from "./GameObjectManager.js";
 
 export class GameObject {
   constructor() {

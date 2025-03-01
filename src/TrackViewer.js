@@ -1,21 +1,21 @@
 // TrackViewer.js
-import * as THREE from 'three';
-import { GameObject } from './GameObject.js';
+import * as THREE from "three";
+import { GameObject } from "./GameObject.js";
 
 function createRainbowTexture(width = 1024, height = 128) {
-  const canvas = document.createElement('canvas');
+  const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
-  const ctx = canvas.getContext('2d');
+  const ctx = canvas.getContext("2d");
   const gradient = ctx.createLinearGradient(0, 0, width, 0);
-  gradient.addColorStop(0.0, 'red');
-  gradient.addColorStop(0.1429, 'orange');
-  gradient.addColorStop(0.2857, 'yellow');
-  gradient.addColorStop(0.4286, 'green');
-  gradient.addColorStop(0.5714, 'blue');
-  gradient.addColorStop(0.7143, 'indigo');
-  gradient.addColorStop(0.8571, 'violet');
-  gradient.addColorStop(1.0, 'red');
+  gradient.addColorStop(0.0, "red");
+  gradient.addColorStop(0.1429, "orange");
+  gradient.addColorStop(0.2857, "yellow");
+  gradient.addColorStop(0.4286, "green");
+  gradient.addColorStop(0.5714, "blue");
+  gradient.addColorStop(0.7143, "indigo");
+  gradient.addColorStop(0.8571, "violet");
+  gradient.addColorStop(1.0, "red");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, width, height);
   const texture = new THREE.CanvasTexture(canvas);
@@ -31,9 +31,10 @@ export class TrackViewer extends GameObject {
   #maxAngleDeg = 100;
   #tolerance = 0.1;
   #trackWidth = 20;
-  #roadHeight = 1;
+  #roadHeight = 2; // Fahrfläche ist 2 Einheiten hoch/dick
   #sideWidth = 2;
   #sideHeight = 2;
+  #sideDistance = 2; // Abstand der Seitenstreifen von der Fahrfläche
   #bankingFactor = 0.4;
   #maxBankingAngle = 25;
   #textureRepeat = 10;
@@ -48,7 +49,6 @@ export class TrackViewer extends GameObject {
     this.checkpoints = [];
     this.splineGroup = new THREE.Group();
     this.wireframe = false;
-    
     this.addLighting();
     this.initCheckpoints();
     this.createTrack();
@@ -67,7 +67,7 @@ export class TrackViewer extends GameObject {
   }
 
   setupKeyToggle() {
-    window.addEventListener('keydown', (event) => {
+    window.addEventListener("keydown", (event) => {
       if (event.key === "0") {
         this.toggleWireframe();
       }
@@ -76,10 +76,10 @@ export class TrackViewer extends GameObject {
 
   toggleWireframe() {
     this.wireframe = !this.wireframe;
-    this.splineGroup.traverse(child => {
+    this.splineGroup.traverse((child) => {
       if (child.isMesh) {
         if (Array.isArray(child.material)) {
-          child.material.forEach(mat => mat.wireframe = this.wireframe);
+          child.material.forEach((mat) => (mat.wireframe = this.wireframe));
         } else {
           child.material.wireframe = this.wireframe;
         }
@@ -104,11 +104,9 @@ export class TrackViewer extends GameObject {
   generateClosedChain(checkpointCount, stepDistance, maxAngleDeg, tolerance) {
     const maxAttempts = 10000;
     const maxAngleRad = THREE.MathUtils.degToRad(maxAngleDeg);
-    
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const v = [];
       v.push(new THREE.Vector3(1, 0, 0).multiplyScalar(stepDistance));
-      
       for (let i = 1; i < checkpointCount - 1; i++) {
         const prevDir = v[i - 1].clone().normalize();
         const newDir = this.randomDirectionInCone(prevDir, maxAngleRad);
@@ -123,7 +121,26 @@ export class TrackViewer extends GameObject {
       const vLast = sum.clone().negate();
       if (Math.abs(vLast.length() - stepDistance) > tolerance) continue;
       
+      // Überprüfe, ob der letzte Vektor eine gute Ausrichtung zum Startpunkt hat
       const prevLastDir = v[checkpointCount - 2].clone().normalize();
+      const firstDir = v[0].clone().normalize();
+      const lastDir = vLast.clone().normalize();
+      
+      // Berechne den Ausrichtungsfaktor zwischen letztem und erstem Vektor
+      // 1 = perfekt ausgerichtet, -1 = gegenüberliegend
+      const alignmentFactor = firstDir.dot(lastDir.clone().negate());
+      
+      // Wenn die Ausrichtung schlecht ist, passe den letzten Vektor an
+      if (alignmentFactor < 0.7) {
+        // Erstelle eine gewichtete Mischung aus aktueller Richtung und idealer Richtung
+        const blendedDir = new THREE.Vector3()
+          .addScaledVector(lastDir, 0.6)
+          .addScaledVector(firstDir, 0.4)
+          .normalize();
+        vLast.copy(blendedDir.multiplyScalar(stepDistance));
+      }
+      
+      // Überprüfe, ob der neue Winkel innerhalb der Grenzen liegt
       if (prevLastDir.angleTo(vLast) > maxAngleRad) continue;
       
       v.push(vLast.normalize().multiplyScalar(stepDistance));
@@ -163,7 +180,7 @@ export class TrackViewer extends GameObject {
     const closedSpline = new THREE.CatmullRomCurve3(
       this.checkpointPositions,
       true,
-      'centripetal',
+      "centripetal",
       0.5
     );
 
@@ -172,8 +189,8 @@ export class TrackViewer extends GameObject {
       "Mindestens 4 Kontrollpunkte benötigt");
 
     const roadGeometry = this.createRoadGeometry(closedSpline);
-    const leftSideGeometry = this.createSideGeometry(closedSpline, 'left');
-    const rightSideGeometry = this.createSideGeometry(closedSpline, 'right');
+    const leftSideGeometry = this.createSideGeometry(closedSpline, "left");
+    const rightSideGeometry = this.createSideGeometry(closedSpline, "right");
     
     const roadMaterial = this.createRoadMaterial(createRainbowTexture());
     const leftMaterial = this.createRoadMaterial(new THREE.Color(0xff8888));
@@ -205,17 +222,16 @@ export class TrackViewer extends GameObject {
     console.assert(frenetFrames.normals.length === points.length,
       "Frenet-Frames stimmen nicht mit Punkten überein");
 
-    const mainWidth = this.#trackWidth - 2 * this.#sideWidth;
+    const mainWidth = this.#trackWidth - 2 * this.#sideWidth - 2 * this.#sideDistance;
 
     for (let i = 0; i < points.length; i++) {
       const t = i / (points.length - 1);
       
       // Sicherer Zugriff mit Fallback
       const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
-      const frame = frenetFrames[safeIndex] || {};
-      const normal = frame.normal || this.#DEFAULT_NORMAL;
-      const binormal = frame.binormal || this.#DEFAULT_BINORMAL;
-      const tangent = frame.tangent || this.#DEFAULT_TANGENT;
+      // Unused variable removed to fix linting warning
+      const binormal = frenetFrames.binormals[safeIndex] || this.#DEFAULT_BINORMAL;
+      const tangent = frenetFrames.tangents[safeIndex] || this.#DEFAULT_TANGENT;
 
       // Banking-Berechnung mit Fehlerabfang
       let banking = 0;
@@ -230,6 +246,7 @@ export class TrackViewer extends GameObject {
           )
         );
       } catch (e) {
+        // Keep the warn statement as it provides valuable debugging information
         console.warn(`Banking-Berechnung fehlgeschlagen bei Index ${i}:`, e);
       }
 
@@ -284,8 +301,8 @@ export class TrackViewer extends GameObject {
       );
     }
 
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
     
     // Automatische Normalenberechnung
@@ -304,17 +321,16 @@ export class TrackViewer extends GameObject {
 
     const points = spline.getPoints(500);
     const frenetFrames = spline.computeFrenetFrames(points.length, true);
-    const isLeft = side === 'left';
+    const isLeft = side === "left";
 
     for (let i = 0; i < points.length; i++) {
       const t = i / (points.length - 1);
       
       // Sicherer Zugriff mit Fallback
       const safeIndex = Math.min(i, frenetFrames.normals.length - 1);
-      const frame = frenetFrames[safeIndex] || {};
-      const normal = frame.normal || this.#DEFAULT_NORMAL;
-      const binormal = frame.binormal || this.#DEFAULT_BINORMAL;
-      const tangent = frame.tangent || this.#DEFAULT_TANGENT;
+      // Unused variable removed to fix linting warning
+      const binormal = frenetFrames.binormals[safeIndex] || this.#DEFAULT_BINORMAL;
+      const tangent = frenetFrames.tangents[safeIndex] || this.#DEFAULT_TANGENT;
 
       // Banking-Berechnung mit Fehlerabfang
       let banking = 0;
@@ -329,16 +345,19 @@ export class TrackViewer extends GameObject {
           )
         );
       } catch (e) {
+        // Keep the warn statement as it provides valuable debugging information
         console.warn(`Seiten-Banking fehlgeschlagen bei Index ${i}:`, e);
       }
 
       const rotation = new THREE.Quaternion().setFromAxisAngle(tangent, banking);
+      // Innerer Rand - mit Abstand von der Fahrbahn
       const offset = binormal.clone()
-        .multiplyScalar((this.#trackWidth / 2 - this.#sideWidth / 2) * (isLeft ? -1 : 1))
+        .multiplyScalar((this.#trackWidth / 2 - this.#sideWidth - this.#sideDistance) * (isLeft ? -1 : 1))
         .applyQuaternion(rotation);
 
+      // Äußerer Rand
       const outer = binormal.clone()
-        .multiplyScalar((this.#trackWidth / 2 + this.#sideWidth / 2) * (isLeft ? -1 : 1))
+        .multiplyScalar((this.#trackWidth / 2 - this.#sideDistance) * (isLeft ? -1 : 1))
         .applyQuaternion(rotation);
 
       const center = points[i];
@@ -385,8 +404,8 @@ export class TrackViewer extends GameObject {
       );
     }
 
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+    geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
     geometry.setIndex(indices);
     
     // Automatische Normalenberechnung
@@ -432,17 +451,121 @@ export class TrackViewer extends GameObject {
   }
 
   addCheckpointMarkers() {
-    const markerGeometry = new THREE.SphereGeometry(3, 32, 32);
-    const markerMaterial = new THREE.MeshPhongMaterial({
-      color: 0x00ff00,
-      shininess: 100
-    });
+    const markerGeometry = new THREE.SphereGeometry(4, 16, 16);
     
+    // Berechne die tangenten für alle Checkpoints
+    const tangents = [];
+    for (let i = 0; i < this.checkpointPositions.length; i++) {
+      const nextIdx = (i + 1) % this.checkpointPositions.length;
+      const prevIdx = (i - 1 + this.checkpointPositions.length) % this.checkpointPositions.length;
+      
+      // Berechne Tangente aus vorherigem und nächstem Punkt
+      const tangent = new THREE.Vector3()
+        .subVectors(this.checkpointPositions[nextIdx], this.checkpointPositions[prevIdx])
+        .normalize();
+      
+      tangents.push(tangent);
+    }
+    
+    // Berechne Zentrum der Strecke für Normalen-Berechnung
+    const center = new THREE.Vector3();
+    for (let i = 0; i < this.checkpointPositions.length; i++) {
+      center.add(this.checkpointPositions[i]);
+    }
+    center.divideScalar(this.checkpointPositions.length);
+    
+    // Erstelle für jeden Checkpoint einen Marker mit angepasster Höhe
     this.checkpointPositions.forEach((pos, i) => {
+      // Berechne Krümmung basierend auf angrenzenden Punkten
+      const prevIdx = (i - 1 + this.checkpointPositions.length) % this.checkpointPositions.length;
+      const nextIdx = (i + 1) % this.checkpointPositions.length;
+      
+      const tangent = tangents[i];
+      const prevTangent = tangents[prevIdx];
+      const nextTangent = tangents[nextIdx];
+      
+      // Berechne Winkeländerung als Maß für die Krümmung
+      const anglePrev = tangent.angleTo(prevTangent);
+      const angleNext = tangent.angleTo(nextTangent);
+      const curvatureValue = (anglePrev + angleNext) / 2;
+      
+      // Debug: Zeige Winkel an - Kept for valuable debugging info
+      console.log(`Checkpoint ${i}: Winkel: ${THREE.MathUtils.radToDeg(curvatureValue).toFixed(2)}°`);
+      
+      // Höhenanpassung: Mehr Höhe bei stärkerer Krümmung für bessere Sichtbarkeit
+      const baseHeight = 5; // Basis-Höhe 5 Einheiten
+      const curvatureBonus = curvatureValue * 5; // Zusätzliche Höhe abhängig von der Krümmung
+      const totalHeight = baseHeight + Math.min(curvatureBonus, 3); // Maximale Zusatzhöhe begrenzen
+      
+      // Position über der Strecke
+      const position = pos.clone();
+      position.y += totalHeight; // Angepasste Höhe über der Strecke
+      
+      // Wähle Farbe basierend auf Position (Start/Ende/normal)
+      let markerMaterial;
+      if (i === 0) {
+        // Startpunkt dunkelgrün
+        markerMaterial = new THREE.MeshPhongMaterial({
+          color: 0x006400, // Dunkelgrün
+          shininess: 100
+        });
+      } else if (i === this.checkpointPositions.length - 1) {
+        // Endpunkt rot - mit besserer Ausrichtung zum Startpunkt
+        markerMaterial = new THREE.MeshPhongMaterial({
+          color: 0xff0000, // Rot
+          shininess: 100
+        });
+        
+        // Berechne Richtungsvektor zum Startpunkt für bessere Ausrichtung
+        const vectorToStart = new THREE.Vector3().subVectors(
+          this.checkpointPositions[0],
+          pos
+        ).normalize();
+        
+        // Passe die Richtung des letzten Checkpoints an, um mehr in Richtung Start zu zeigen
+        // Mische die Tangente mit dem Vektor in Richtung Start
+        const blendedTangent = new THREE.Vector3()
+          .addScaledVector(tangent, 0.3)
+          .addScaledVector(vectorToStart, 0.7)
+          .normalize();
+          
+        // Aktualisiere die Tangente für diesen Checkpoint
+        tangents[i] = blendedTangent;
+      } else {
+        // Normale Checkpoints grün
+        markerMaterial = new THREE.MeshPhongMaterial({
+          color: 0x00ff00, // Normale Checkpoints grün
+          shininess: 100
+        });
+      }
+      
+      // Erstelle Checkpoint-Marker
       const marker = new THREE.Mesh(markerGeometry, markerMaterial);
-      marker.position.copy(pos);
-      marker.position.z += 2;
+      marker.position.copy(position);
       marker.castShadow = true;
+      
+      // Erstelle Textlabel für Debug-Info (wenn gewünscht)
+      if (i % 3 === 0) { // Nur bei jedem dritten Checkpoint
+        // Erstelle Wireframe-Box zum Anzeigen der Rotation
+        const boxSize = 2 + curvatureValue * 3; // Größe abhängig von der Krümmung
+        const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+        const wireframeMaterial = new THREE.MeshBasicMaterial({
+          color: 0xffff00,
+          wireframe: true
+        });
+        const wireframe = new THREE.Mesh(boxGeometry, wireframeMaterial);
+        wireframe.position.copy(position);
+        wireframe.position.y += 2; // Etwas über dem Checkpoint
+        
+        // Rotation entsprechend der Richtung setzen
+        wireframe.quaternion.setFromUnitVectors(
+          new THREE.Vector3(0, 1, 0),
+          tangents[i] // Verwende die möglicherweise angepasste Tangente
+        );
+        
+        this.addToScene(wireframe);
+      }
+      
       this.addToScene(marker);
     });
   }
