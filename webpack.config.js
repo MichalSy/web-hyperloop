@@ -8,7 +8,7 @@ module.exports = {
   output: {
     filename: 'bundle.js',
     path: path.resolve(__dirname, 'dist'),
-    publicPath: '/'
+    publicPath: './'
   },
   resolve: {
     extensions: ['.js'],
@@ -32,7 +32,8 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: './src/index.html',
       filename: 'index.html',
-      inject: 'body'
+      inject: 'body',
+      publicPath: './'
     }),
     new CopyWebpackPlugin({
       patterns: [
@@ -52,6 +53,7 @@ module.exports = {
     open: true,
     watchFiles: ['src/**/*'],
     liveReload: true,
+    publicPath: './'
   },
   watchOptions: {
     poll: 1000, // Check for changes every second
