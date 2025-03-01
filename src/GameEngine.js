@@ -21,7 +21,7 @@ class GameEngine {
 
     this.renderer = new THREE.WebGLRenderer();
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.outputEncoding = THREE.sRGBEncoding;
+    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     document.body.appendChild(this.renderer.domElement);
     this.gameObjectManager = null;
   }

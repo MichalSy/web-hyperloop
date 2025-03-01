@@ -1,7 +1,7 @@
 // Player.js
 import * as THREE from 'three';
 import { GameObject } from './GameObject.js';
-import { PointerLockControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/PointerLockControls.js';
+import { PointerLockControls } from 'three/examples/jsm/controls/PointerLockControls.js';
 
 export class Player extends GameObject {
   constructor(moveSpeed = 100) {
