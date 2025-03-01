@@ -1,20 +1,37 @@
-name: Deploy to GitHub Pages
+name: Build and Deploy to GitHub Pages
 
-# Run workflow on every push to the master branch
+# Run workflow on every push to the main branch
 on:
   push:
-    branches: [ main ]
+    branches: [ main, next ]
 
 jobs:
-  deploy-to-github-pages:
-    # use ubuntu-latest image to run steps on
+  build-and-deploy:
     runs-on: ubuntu-latest
     steps:
-    # uses GitHub's checkout action to checkout code form the master branch
-    - uses: actions/checkout@v2
-             
-    - name: Commit to GitHub Pages
-      uses: JamesIves/github-pages-deploy-action@4.1.7
+    # Checkout the repository
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    # Setup Node.js
+    - name: Setup Node.js
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+        cache: 'npm'
+
+    # Install dependencies
+    - name: Install dependencies
+      run: npm ci
+
+    # Build the project
+    - name: Build
+      run: npm run build
+
+    # Deploy to GitHub Pages
+    - name: Deploy
+      uses: JamesIves/github-pages-deploy-action@v4
       with:
         branch: gh-pages
-        folder: src
+        folder: dist
+        clean: true
